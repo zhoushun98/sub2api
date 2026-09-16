@@ -574,6 +574,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	if err := validateRequestIntegrityExtra(input.Extra); err != nil {
+		return nil, err
+	}
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
@@ -694,6 +697,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 				normalizedExtra[key] = v
 			}
 		}
+		normalizedExtra = preserveMode1ManagedExtra(ctx, account, normalizedExtra)
 		normalizedExtra = prepareCodexFingerprintExtraForUpdate(account, normalizedExtra)
 		account.Extra = normalizedExtra
 		if account.Platform == PlatformAntigravity && wasOveragesEnabled && !account.IsOveragesEnabled() {
@@ -837,6 +841,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 	}
 
+	BoundAccountProtectionConcurrency(account)
+	if err := ValidateAccountProtectionConfiguration(account); err != nil {
+		return nil, err
+	}
 	billingSettingsAppliedAtomically := false
 	updater := s.accountBillingRepo
 	if updater == nil {
@@ -902,6 +910,18 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 // UpdateAccountExtra 仅对 Extra JSONB 做 key 级合并，避免覆盖其它运行态键
 // （如 model_rate_limits / passive_usage_* 等）。
 func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
+	if err := validateRequestIntegrityExtra(updates); err != nil {
+		return err
+	}
+	if hasMode1ManagedUpdates(updates) {
+		account, err := s.accountRepo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if isMode1ProtectionRequested(account) {
+			return infraerrors.BadRequest("MODE1_MANAGED_FIELDS", "模式一策略字段请通过专用应用/还原接口修改")
+		}
+	}
 	updates = sanitizedCodexFingerprintExtraUpdates(updates)
 	updates = stripOpenAIAutoResetCreditManagedExtra(updates, true)
 	delete(updates, UpstreamBillingProbeEnabledExtraKey)
@@ -969,15 +989,25 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	needMixedChannelCheck := input.GroupIDs != nil && !input.SkipMixedChannelCheck
+	if err := validateRequestIntegrityExtra(input.Extra); err != nil {
+		return nil, err
+	}
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil || hasMode1ManagedUpdates(input.Extra) {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
 		}
 		cachedTargets = loaded
+	}
+	if hasMode1ManagedUpdates(input.Extra) {
+		for _, a := range cachedTargets {
+			if isMode1ProtectionRequested(a) {
+				return nil, infraerrors.BadRequest("MODE1_MANAGED_FIELDS", "请先还原模式一，再批量修改其策略字段")
+			}
+		}
 	}
 	targetsByID := make(map[int64]*Account, len(cachedTargets))
 	for _, account := range cachedTargets {
