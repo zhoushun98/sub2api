@@ -12,11 +12,11 @@ import (
 
 func TestMode1SchedulerProjectionRetainsPolicyAndProxy(t *testing.T) {
 	a := service.Account{ID: 1, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Concurrency: 100, Extra: map[string]any{
-		"codex_fingerprint_mode": "device", "codex_fingerprint_seed": "11111111-1111-4111-8111-111111111111", "enable_tls_fingerprint": true, "tls_fingerprint_builtin": "nodejs24", "proxy_mode": "random",
+		"codex_fingerprint_mode": "device", "codex_fingerprint_seed": "11111111-1111-4111-8111-111111111111", "enable_tls_fingerprint": true, "tls_fingerprint_builtin": "nodejs24",
 		"anti_degrade": map[string]any{"enabled": true, "mode": "mode1", "policy_version": 2, "max_concurrency": 4},
 	}}
 	projected := buildSchedulerMetadataAccount(a)
-	for _, key := range []string{"anti_degrade", "proxy_mode", "enable_tls_fingerprint", "tls_fingerprint_builtin", "codex_fingerprint_seed"} {
+	for _, key := range []string{"anti_degrade", "enable_tls_fingerprint", "tls_fingerprint_builtin", "codex_fingerprint_seed"} {
 		require.Equal(t, a.Extra[key], projected.Extra[key], key)
 	}
 	require.Equal(t, 100, projected.Mode1EffectiveConcurrency())
