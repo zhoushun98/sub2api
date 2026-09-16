@@ -2659,9 +2659,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 
 		account := selection.Account
-		accountMaxConcurrency := account.Concurrency
+		accountMaxConcurrency := account.Mode1EffectiveConcurrency()
 		if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
 			accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
+		}
+		if account.IsMode1ProtectionEnabled() && (accountMaxConcurrency <= 0 || accountMaxConcurrency > account.Mode1EffectiveConcurrency()) {
+			accountMaxConcurrency = account.Mode1EffectiveConcurrency()
 		}
 		// 终检、准入后绑定与后续 turn 级复核都使用选号结果携带的门（composite
 		// 等跨分组调度的门只存在于调度栈局部 ctx）；准入成功后并入连接 ctx。
