@@ -1651,6 +1651,13 @@
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
       </div>
 
+      <AccountProtectionPanel
+        :account="account"
+        :disabled="submitting"
+        v-model:request-integrity-mode="requestIntegrityMode"
+        @updated="handleProtectionUpdated"
+      />
+
       <UpstreamRequestIdHeaderField
         v-model="upstreamRequestIdHeader"
         :platform="account.platform"
@@ -3055,6 +3062,7 @@ import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
+import AccountProtectionPanel from '@/components/account/AccountProtectionPanel.vue'
 import {
   applyAntigravityProjectID,
   applyHeaderOverride,
@@ -3502,6 +3510,8 @@ const umqModeOptions = computed(() => [
   { value: 'serialize', label: t('admin.accounts.quotaControl.rpmLimit.umqModeSerialize') },
 ])
 const tlsFingerprintEnabled = ref(false)
+// 请求完整性检查（独立于保护策略），default 表示跟随策略默认、不写 extra 键
+const requestIntegrityMode = ref('default')
 const tlsFingerprintProfileId = ref<number | null>(null)
 const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
 const sessionIdMaskingEnabled = ref(false)
@@ -4755,6 +4765,11 @@ function loadQuotaControlSettings(account: Account) {
   }
   tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
 
+  // 请求完整性检查（独立于保护策略）
+  const integrityRaw = (account.extra as Record<string, unknown> | undefined)?.request_integrity_mode
+  requestIntegrityMode.value =
+    typeof integrityRaw === 'string' && ['off', 'observe', 'enforce'].includes(integrityRaw) ? integrityRaw : 'default'
+
   // Load session ID masking setting
   if (account.session_id_masking_enabled === true) {
     sessionIdMaskingEnabled.value = true
@@ -4926,6 +4941,21 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
     }
   }
   return updatedAccount
+}
+
+// 保护操作立即生效；把返回账号里受策略管理的字段同步回表单，避免底部保存回写旧值。
+const handleProtectionUpdated = (updated: Account) => {
+  const extra = (updated.extra as Record<string, unknown> | undefined) || {}
+  const fpMode = extra.codex_fingerprint_mode
+  codexFingerprintMode.value = typeof fpMode === 'string' && ['device', 'session', 'full'].includes(fpMode)
+    ? (fpMode as CodexFingerprintMode)
+    : 'off'
+  tlsFingerprintEnabled.value = updated.enable_tls_fingerprint === true || extra.enable_tls_fingerprint === true
+  tlsFingerprintProfileId.value = updated.tls_fingerprint_profile_id ?? (typeof extra.tls_fingerprint_profile_id === 'number' ? extra.tls_fingerprint_profile_id : null)
+  if (typeof updated.concurrency === 'number' && form.concurrency === (props.account?.concurrency ?? form.concurrency)) {
+    form.concurrency = updated.concurrency
+  }
+  emit('updated', updated)
 }
 
 const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
@@ -5434,6 +5464,13 @@ const handleSubmit = async () => {
       } else {
         delete newExtra.enable_tls_fingerprint
         delete newExtra.tls_fingerprint_profile_id
+      }
+
+      // 请求完整性检查
+      if (requestIntegrityMode.value === 'default') {
+        delete newExtra.request_integrity_mode
+      } else {
+        newExtra.request_integrity_mode = requestIntegrityMode.value
       }
 
       // Session ID masking setting

@@ -1248,6 +1248,11 @@ export interface Account {
   enable_tls_fingerprint?: boolean | null
   tls_fingerprint_profile_id?: number | null
 
+  // 账号防降智保护（后端只读投影，写入走专用接口）
+  anti_degradation?: boolean
+  protection_scope?: 'codex_v3' | 'generic_v1' | 'legacy' | 'disabled'
+  protection_mode?: 'mode1' | 'mode2' | 'legacy' | 'generic' | 'disabled' | string
+
   // 会话ID伪装（仅 Anthropic OAuth/SetupToken 账号有效）
   // 启用后将在15分钟内固定 metadata.user_id 中的 session ID
   session_id_masking_enabled?: boolean | null

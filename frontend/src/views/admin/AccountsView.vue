@@ -191,6 +191,12 @@
           @select-all-results="handleSelectAllResults"
           @toggle-schedulable="handleBulkToggleSchedulable"
         />
+        <div v-if="selIds.length" class="mb-3">
+          <button type="button" class="btn btn-secondary text-sm" :disabled="enablingProtection" @click="enableSelectedProtection">
+            <Icon name="shield" size="sm" />
+            {{ t('admin.accounts.protectionBatchEnable') }}
+          </button>
+        </div>
         <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <DataTable
           ref="dataTableRef"
@@ -287,8 +293,9 @@
             <AccountCapacityCell :account="row" />
           </template>
           <template #cell-status="{ row }">
-            <div class="flex items-center gap-1.5">
+            <div class="flex flex-col items-start gap-1.5">
               <AccountStatusIndicator :account="row" @show-temp-unsched="handleShowTempUnsched" />
+              <ProtectionToggle :account="row" @updated="handleAccountUpdated" />
             </div>
           </template>
           <template #cell-schedulable="{ row }">
@@ -515,6 +522,7 @@ import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
 import type { SelectOption } from '@/components/common/Select.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
+import ProtectionToggle from '@/components/account/ProtectionToggle.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
@@ -2246,6 +2254,22 @@ const handleProbeUpstreamBilling = async (account: Account) => {
     appStore.showError(extractApiErrorMessage(error, t('admin.accounts.upstreamBilling.probeFailed')))
   } finally {
     probingUpstreamBilling.delete(account.id)
+  }
+}
+const enablingProtection = ref(false)
+const enableSelectedProtection = async () => {
+  if (enablingProtection.value || !selIds.value.length) return
+  enablingProtection.value = true
+  try {
+    const result = await adminAPI.accounts.enableProtectionBatch(selIds.value)
+    const failed = Object.keys(result.failures ?? {}).length
+    if (failed) appStore.showError(t('admin.accounts.protectionBatchPartial', { success: result.success_ids.length, failed }))
+    else appStore.showSuccess(t('admin.accounts.protectionBatchSuccess', { count: result.success_ids.length }))
+    await reload()
+  } catch (error) {
+    appStore.showError((error as { message?: string })?.message || t('admin.accounts.protectionBatchFailed'))
+  } finally {
+    enablingProtection.value = false
   }
 }
 const handleAccountUpdated = (updatedAccount: Account) => {
