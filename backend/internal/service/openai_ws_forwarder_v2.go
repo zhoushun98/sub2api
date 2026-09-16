@@ -63,7 +63,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	)
 
 	payload := s.buildOpenAIWSCreatePayload(reqBody, account)
-	payloadStrategy, removedKeys := applyOpenAIWSRetryPayloadStrategy(payload, attempt)
+	payloadStrategy := "mode1_preserve"
+	var removedKeys []string
+	if !isMode1ProtectionEnabled(account) {
+		payloadStrategy, removedKeys = applyOpenAIWSRetryPayloadStrategy(payload, attempt)
+	}
 	turnState := ""
 	turnMetadata := ""
 	if c != nil && c.Request != nil {
@@ -72,6 +76,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	setOpenAIWSTurnMetadata(payload, turnMetadata)
 	applyStagedCodexFingerprintClientMetadata(c, account, payload)
+	if err := validateMode1StagedRequest(c, account, payloadAsJSONBytes(payload)); err != nil {
+		return nil, err
+	}
 	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 	promptCacheKey := strings.TrimSpace(clientPromptCacheKey)

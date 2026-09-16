@@ -6,6 +6,7 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -247,10 +248,10 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	if profile == nil {
 		return s.Do(req, proxyURL, accountID, accountConcurrency)
 	}
-	// Plain HTTP has no TLS handshake to fingerprint. Reuse the normal transport
-	// so a configured HTTP or SOCKS proxy is not bypassed.
-	if req != nil && req.URL != nil && strings.EqualFold(req.URL.Scheme, "http") {
-		return s.Do(req, proxyURL, accountID, accountConcurrency)
+	// An explicitly selected TLS profile must not silently take an unprotected
+	// route, including redirects to HTTP or a plaintext upstream URL.
+	if req == nil || req.URL == nil || !strings.EqualFold(req.URL.Scheme, "https") {
+		return nil, fmt.Errorf("TLS fingerprint request requires HTTPS")
 	}
 	applyGrokCLIProxyHeaders(req)
 	upstreamProfile := service.HTTPUpstreamProfileDefault
@@ -264,7 +265,11 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	}
 	proxyInfo := "direct"
 	if proxyURL != "" {
-		proxyInfo = proxyURL
+		if parsed, parseErr := url.Parse(proxyURL); parseErr == nil {
+			proxyInfo = parsed.Redacted()
+		} else {
+			proxyInfo = "configured"
+		}
 	}
 	slog.Debug("tls_fingerprint_enabled", "account_id", accountID, "target", targetHost, "proxy", proxyInfo, "profile", profile.Name)
 
@@ -502,16 +507,23 @@ func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID in
 // getClientEntryWithTLS 获取或创建带 TLS 指纹的客户端条目
 // TLS 指纹客户端使用独立的缓存键，与普通客户端隔离
 func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
-	isolation := s.getIsolationMode()
+	if profile == nil {
+		return nil, fmt.Errorf("TLS fingerprint client requires a profile")
+	}
+	profile = profile.Clone()
+	// A fingerprint-enabled account always owns its pool, even when the global
+	// default allows clients to share a pool by proxy.
+	isolation := config.ConnectionPoolIsolationAccountProxy
 	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
 	if err != nil {
 		return nil, err
 	}
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
-	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
-	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, upstreamProtocolModeDefault)
-	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls"
+	proxyDigest := sha256.Sum256([]byte(proxyKey))
+	profileKey := profile.CacheKey()
+	cacheKey := fmt.Sprintf("tls:account:%d|proxy:%x|profile:%s", accountID, proxyDigest, profileKey)
+	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls:" + profileKey
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -561,7 +573,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 
 	// 创建带 TLS 指纹的 Transport
-	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey, "proxy", proxyKey)
+	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey)
 	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, parsedProxy, profile)
 	if err != nil {
 		s.mu.Unlock()
@@ -1400,36 +1412,10 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 		ForceAttemptHTTP2: false,
 	}
 
-	// 根据代理类型选择合适的 TLS 指纹 Dialer
-	if proxyURL == nil {
-		// 直连：使用 TLSFingerprintDialer
-		slog.Debug("tls_fingerprint_transport_direct")
-		dialer := tlsfingerprint.NewDialer(profile, nil)
-		transport.DialTLSContext = dialer.DialTLSContext
-	} else {
-		scheme := strings.ToLower(proxyURL.Scheme)
-		switch scheme {
-		case "socks5", "socks5h":
-			// SOCKS5 代理：使用 SOCKS5ProxyDialer
-			slog.Debug("tls_fingerprint_transport_socks5", "proxy", proxyURL.Host)
-			socks5Dialer := tlsfingerprint.NewSOCKS5ProxyDialer(profile, proxyURL)
-			transport.DialTLSContext = socks5Dialer.DialTLSContext
-		case "https":
-			// The fingerprint dialer emits a plaintext CONNECT preface and cannot
-			// establish TLS to an HTTPS proxy. Keep proxy routing via net/http.
-			return buildUpstreamTransport(settings, proxyURL, upstreamProtocolModeDefault)
-		case "http":
-			// HTTP/HTTPS 代理：使用 HTTPProxyDialer（CONNECT 隧道）
-			slog.Debug("tls_fingerprint_transport_http_connect", "proxy", proxyURL.Host)
-			httpDialer := tlsfingerprint.NewHTTPProxyDialer(profile, proxyURL)
-			transport.DialTLSContext = httpDialer.DialTLSContext
-		default:
-			// 未知代理类型，回退到普通代理配置（无 TLS 指纹）
-			slog.Debug("tls_fingerprint_transport_unknown_scheme_fallback", "scheme", scheme)
-			if err := proxyutil.ConfigureTransportProxy(transport, proxyURL); err != nil {
-				return nil, err
-			}
-		}
+	if err := tlsfingerprint.ConfigureTransport(transport, profile, proxyURL, tlsfingerprint.TransportOptions{
+		DialContext: newUpstreamDialer().DialContext, HandshakeTimeout: defaultUpstreamTLSHandshakeTimeout,
+	}); err != nil {
+		return nil, err
 	}
 
 	return transport, nil
