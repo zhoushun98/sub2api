@@ -923,7 +923,9 @@ var ProviderSet = wire.NewSet(
 	NewUsageCache,
 	NewTotpService,
 	NewErrorPassthroughService,
-	NewTLSFingerprintProfileService,
+	ProvideTLSFingerprintProfileService,
+	ProvideAntiDegradeService,
+	wire.Bind(new(AntiDegradeStore), new(AdminService)),
 	NewPluginManager,
 	NewDigestSessionStore,
 	ProvideIdempotencyCoordinator,
@@ -1040,4 +1042,16 @@ func ProvideChannelMonitorV2Aggregator(repo ChannelMonitorV2Repository, db *sql.
 	}
 	aggregator.Start()
 	return aggregator
+}
+
+// ProvideTLSFingerprintProfileService 注入全局配置，让账号级 TLS 模板受部署级开关约束。
+func ProvideTLSFingerprintProfileService(repo TLSFingerprintProfileRepository, cache TLSFingerprintProfileCache, cfg *config.Config) *TLSFingerprintProfileService {
+	return NewTLSFingerprintProfileService(repo, cache, cfg)
+}
+
+// ProvideAntiDegradeService 组装账号保护服务，预览需要全局配置与插件路由信息。
+func ProvideAntiDegradeService(store AntiDegradeStore, cfg *config.Config, plugins *PluginManager) *AntiDegradeService {
+	svc := NewAntiDegradeService(store)
+	svc.cfg, svc.pluginManager = cfg, plugins
+	return svc
 }
