@@ -210,7 +210,7 @@ const tooltipStyle = computed(() => {
 	display: block;
 	width: 100%;
 	min-height: 3px;
-	border-radius: 4px;
+	border-radius: 3px;
   transform-origin: bottom;
   animation: v3-soft-glass-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -218,7 +218,7 @@ const tooltipStyle = computed(() => {
 .v3-timeline-bars {
 	display: flex;
 	position: relative;
-	height: 24px;
+	height: 20px;
 	width: 100%;
 	gap: 4px;
 	isolation: isolate;
