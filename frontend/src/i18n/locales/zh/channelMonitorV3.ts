@@ -21,6 +21,7 @@ export default {
     unknownGroup: '未知分组',
     timelineTooltip: '{time} · 可用率 {availability} · 缓存率 {cache} · 首 Token {ttft}',
     timelineNoTraffic: '{time} · 暂无请求',
+    ttftNoStream: '该时段没有流式请求，无首 Token 数据',
     emptyTitle: '暂无渠道数据',
     emptyDescription: '当前时间范围内还没有可展示的被动监控数据',
     platformSection: '{platform}',

@@ -21,6 +21,7 @@ export default {
     unknownGroup: 'Unknown group',
     timelineTooltip: '{time} · Availability {availability} · Cache {cache} · First token {ttft}',
     timelineNoTraffic: '{time} · no requests',
+    ttftNoStream: 'No streaming requests in this range, so there is no first-token data',
     emptyTitle: 'No channel data',
     emptyDescription: 'There is no passive-monitor data for this time range yet',
     platformSection: '{platform}',
