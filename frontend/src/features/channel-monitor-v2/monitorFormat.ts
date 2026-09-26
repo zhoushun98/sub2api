@@ -6,7 +6,7 @@
  * request/error/token counts in user-facing surfaces.
  */
 
-import type { HealthScoreBand, HealthState, MonitorHealth } from '@/api/channelMonitorV2'
+import type { HealthScoreBand, HealthState, MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
 import { formatCompactNumber } from '@/utils/format'
 
 export function monitorIntlLocale(): string {
@@ -64,27 +64,71 @@ export function formatMonitorPercent(value: number, locale = monitorIntlLocale()
 }
 
 /**
- * 按可用率（0-100）给用户端色块与数值上色。
- * 区间由差到好依次判断、互不重叠：<30 黑、<50 红、<60 琥珀、<80 浅黄、<90 浅绿、>=90 深绿。
+ * 用户端渠道卡片的信号状态：可用率与首 Token 各自分档后取较差者。
+ * 可用率固定 ≥70% 绿 / ≥30% 黄 / <30% 红；首 Token 按 V2 配置的关注 / 异常阈值分档。
+ * 无请求时为 unknown；首 Token 无样本或未配置阈值时不参与取较差。
  */
-export function availabilityBarClass(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return 'bg-gray-300 dark:bg-dark-600'
-  if (value < 30) return 'bg-gray-950 dark:bg-black'
-  if (value < 50) return 'bg-red-500 dark:bg-red-400'
-  if (value < 60) return 'bg-amber-400 dark:bg-amber-300'
-  if (value < 80) return 'bg-yellow-300 dark:bg-yellow-200'
-  if (value < 90) return 'bg-emerald-400 dark:bg-emerald-300'
-  return 'bg-emerald-600 dark:bg-emerald-400'
+export const SIGNAL_AVAILABILITY_HEALTHY_MIN = 70
+export const SIGNAL_AVAILABILITY_WARNING_MIN = 30
+
+export interface SignalTtftThresholds {
+  warning_ttft_ms: number
+  critical_ttft_ms: number
 }
 
-export function availabilityTextClass(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return 'text-gray-900 dark:text-gray-100'
-  if (value < 30) return 'text-gray-950 dark:text-white'
-  if (value < 50) return 'text-red-600 dark:text-red-400'
-  if (value < 60) return 'text-amber-700 dark:text-amber-300'
-  if (value < 80) return 'text-yellow-700 dark:text-yellow-300'
-  if (value < 90) return 'text-emerald-700 dark:text-emerald-300'
-  return 'text-emerald-800 dark:text-emerald-300'
+const SIGNAL_SEVERITY: Record<HealthState, number> = { unknown: -1, healthy: 0, warning: 1, critical: 2 }
+
+export function availabilitySignalState(percent: number | null | undefined): HealthState {
+  if (percent == null || !Number.isFinite(percent)) return 'unknown'
+  if (percent >= SIGNAL_AVAILABILITY_HEALTHY_MIN) return 'healthy'
+  if (percent >= SIGNAL_AVAILABILITY_WARNING_MIN) return 'warning'
+  return 'critical'
+}
+
+export function ttftSignalState(ms: number | null | undefined, thresholds?: SignalTtftThresholds | null): HealthState {
+  if (ms == null || !Number.isFinite(ms) || !thresholds) return 'unknown'
+  if (ms >= thresholds.critical_ttft_ms) return 'critical'
+  if (ms >= thresholds.warning_ttft_ms) return 'warning'
+  return 'healthy'
+}
+
+export function channelSignalState(metrics: MonitorMetric | null | undefined, thresholds?: SignalTtftThresholds | null): HealthState {
+  if (!metrics || !(metrics.request_count > 0)) return 'unknown'
+  const availability = availabilitySignalState((1 - metrics.error_rate) * 100)
+  const ttft = ttftSignalState(metrics.ttft?.sample_count ? metrics.ttft.p50_ms : null, thresholds)
+  return SIGNAL_SEVERITY[ttft] > SIGNAL_SEVERITY[availability] ? ttft : availability
+}
+
+// 色块高度随状态递减：绿满格、黄约 2/3、红约 1/3、无数据只留一道底线
+export const SIGNAL_STATE_STYLE: Record<HealthState, { barClass: string; textClass: string; badgeClass: string; heightPct: number }> = {
+  healthy: {
+    barClass: 'bg-emerald-500 dark:bg-emerald-400',
+    textClass: 'text-emerald-600 dark:text-emerald-300',
+    badgeClass: 'bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300',
+    heightPct: 100,
+  },
+  warning: {
+    barClass: 'bg-amber-500 dark:bg-amber-400',
+    textClass: 'text-amber-600 dark:text-amber-300',
+    badgeClass: 'bg-amber-500/15 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
+    heightPct: 65,
+  },
+  critical: {
+    barClass: 'bg-red-500 dark:bg-red-400',
+    textClass: 'text-red-600 dark:text-red-400',
+    badgeClass: 'bg-red-500/15 text-red-700 dark:bg-red-400/15 dark:text-red-300',
+    heightPct: 35,
+  },
+  unknown: {
+    barClass: 'bg-gray-300 dark:bg-dark-600',
+    textClass: 'text-gray-900 dark:text-gray-100',
+    badgeClass: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300',
+    heightPct: 15,
+  },
+}
+
+export function formatSignalSeconds(ms: number): string {
+  return `${Number((ms / 1000).toFixed(1))}s`
 }
 
 export function formatMonitorMs(value: number | null | undefined): string {

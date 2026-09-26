@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  availabilitySignalState,
+  channelSignalState,
   formatLatencyKpiSecondary,
   formatLatencyPrivacy,
   formatMonitorMs,
@@ -10,13 +12,15 @@ import {
   formatMonitorSuccessRateFromError,
   formatMonitorThroughput,
   formatMonitorTokensPerSecond,
+  formatSignalSeconds,
   healthScoreClass,
   healthStateClass,
   scoreToBand,
   tokensPerSecondFromTpm,
   ttftDisplayState,
+  ttftSignalState,
 } from '../monitorFormat'
-import type { MonitorHealth } from '@/api/channelMonitorV2'
+import type { MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
 
 describe('monitorFormat accuracy', () => {
   it('converts backend TPM (per minute) to tokens/sec for display', () => {
@@ -133,5 +137,53 @@ describe('monitorFormat accuracy', () => {
     expect(formatLatencyPrivacy(100, 250, 120, 300)).toBe('AVG 120ms · P50 100ms · P90 250ms')
     expect(formatLatencyPrivacy(100, null, null, 300)).toBe('P50 100ms · P95 300ms')
     expect(formatLatencyPrivacy(null, null)).toBe('-')
+  })
+})
+
+describe('channel signal state', () => {
+  const thresholds = { warning_ttft_ms: 8000, critical_ttft_ms: 20000 }
+
+  function metric(requests: number, errorRate: number, ttftMs: number | null): MonitorMetric {
+    return {
+      success_requests: 0,
+      error_requests: 0,
+      request_count: requests,
+      token_count: 0,
+      rpm: 0,
+      tpm: 0,
+      error_rate: errorRate,
+      cache_rate: 0,
+      cache_rate_numerator: 0,
+      cache_rate_denominator: 0,
+      ttft: { sample_count: ttftMs == null ? 0 : requests, p50_ms: ttftMs, p95_ms: null, avg_ms: null },
+      duration: { sample_count: 0, p50_ms: null, p95_ms: null, avg_ms: null },
+    }
+  }
+
+  it('bands availability at 70 / 30 inclusive', () => {
+    expect(availabilitySignalState(70)).toBe('healthy')
+    expect(availabilitySignalState(69.9)).toBe('warning')
+    expect(availabilitySignalState(30)).toBe('warning')
+    expect(availabilitySignalState(29.9)).toBe('critical')
+    expect(availabilitySignalState(null)).toBe('unknown')
+  })
+
+  it('bands first token by configured thresholds', () => {
+    expect(ttftSignalState(7999, thresholds)).toBe('healthy')
+    expect(ttftSignalState(8000, thresholds)).toBe('warning')
+    expect(ttftSignalState(20000, thresholds)).toBe('critical')
+    expect(ttftSignalState(9000, null)).toBe('unknown')
+  })
+
+  it('takes the worse state and ignores missing first-token samples', () => {
+    expect(channelSignalState(metric(10, 0.02, 25000), thresholds)).toBe('critical')
+    expect(channelSignalState(metric(10, 0.5, 2000), thresholds)).toBe('warning')
+    expect(channelSignalState(metric(10, 0.02, null), thresholds)).toBe('healthy')
+    expect(channelSignalState(metric(0, 0, null), thresholds)).toBe('unknown')
+  })
+
+  it('formats legend seconds without trailing zeros', () => {
+    expect(formatSignalSeconds(8000)).toBe('8s')
+    expect(formatSignalSeconds(10500)).toBe('10.5s')
   })
 })

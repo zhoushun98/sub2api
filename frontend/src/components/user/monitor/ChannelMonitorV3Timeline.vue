@@ -32,21 +32,23 @@
             />
           </span>
         </button>
-
-        <Teleport to="body">
-          <Transition name="v3-timeline-tooltip">
-            <div
-              v-if="hoveredBarIndex === index && bar.title"
-              class="v3-timeline-tooltip"
-              role="tooltip"
-              :style="tooltipStyle"
-            >
-              {{ bar.title }}
-            </div>
-          </Transition>
-        </Teleport>
       </div>
     </div>
+
+    <Teleport to="body">
+      <Transition name="v3-timeline-tooltip">
+        <div
+          v-if="hoveredBar?.title"
+          ref="tooltipEl"
+          class="v3-timeline-tooltip"
+          role="tooltip"
+          data-testid="channel-timeline-tooltip"
+          :style="tooltipStyle"
+        >
+          {{ hoveredBar.title }}
+        </div>
+      </Transition>
+    </Teleport>
 
     <div class="channel-signal-timeline__axis mt-1 flex justify-between text-[9px] uppercase tracking-widest text-gray-400">
       <span>{{ t('monitorCommon.past') }}</span>
@@ -56,40 +58,43 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MonitorMatrixBucket } from '@/api/channelMonitorV2'
-import { availabilityBarClass, formatMonitorMs, formatMonitorPercent } from '@/features/channel-monitor-v2/monitorFormat'
+import {
+  SIGNAL_STATE_STYLE,
+  channelSignalState,
+  formatMonitorMs,
+  formatMonitorPercent,
+  type SignalTtftThresholds,
+} from '@/features/channel-monitor-v2/monitorFormat'
 
 const props = withDefaults(defineProps<{
   buckets?: MonitorMatrixBucket[]
   countdownSeconds: number
   length?: number
+  ttftThresholds?: SignalTtftThresholds | null
 }>(), {
   buckets: () => [],
   length: 18,
+  ttftThresholds: null,
 })
 
 const { t, locale } = useI18n()
 const hoveredBarIndex = ref<number | null>(null)
-const tooltipPosition = ref({ left: 0, top: 0, x: '-50%' })
+// 被指向色块的视口坐标（中心 x、顶部 y）；提示框位置与箭头都由它推算
+const tooltipAnchor = ref({ center: 0, top: 0 })
+const tooltipEl = ref<HTMLElement | null>(null)
+const tooltipWidth = ref(280)
+const TOOLTIP_GUTTER = 16
+const TOOLTIP_ARROW_INSET = 12
 
 function setHoveredBar(index: number, event?: Event) {
   hoveredBarIndex.value = index
   const target = event?.currentTarget
-  if (!(target instanceof HTMLElement) || typeof window === 'undefined') return
-
+  if (!(target instanceof HTMLElement)) return
   const rect = target.getBoundingClientRect()
-  const viewportGutter = 16
-  const maxTooltipWidth = Math.min(280, window.innerWidth - viewportGutter * 2)
-  const center = rect.left + rect.width / 2
-  if (center + maxTooltipWidth / 2 > window.innerWidth - viewportGutter) {
-    tooltipPosition.value = { left: window.innerWidth - viewportGutter, top: rect.top - 8, x: '-100%' }
-  } else if (center - maxTooltipWidth / 2 < viewportGutter) {
-    tooltipPosition.value = { left: viewportGutter, top: rect.top - 8, x: '0%' }
-  } else {
-    tooltipPosition.value = { left: center, top: rect.top - 8, x: '-50%' }
-  }
+  tooltipAnchor.value = { center: rect.left + rect.width / 2, top: rect.top - 8 }
 }
 
 function clearHoveredBar() {
@@ -125,13 +130,6 @@ function barMotionStyle(index: number) {
   }
 }
 
-const STATUS_STYLE = {
-  healthy: { colorClass: 'bg-emerald-500', heightPct: 100 },
-  warning: { colorClass: 'bg-amber-500', heightPct: 65 },
-  critical: { colorClass: 'bg-red-500', heightPct: 35 },
-  unknown: { colorClass: 'bg-gray-300 dark:bg-dark-600', heightPct: 15 },
-} as const
-
 interface TimelineBar {
   key: string
   colorClass: string
@@ -158,19 +156,15 @@ const displayBars = computed<TimelineBar[]>(() => {
   const bars: TimelineBar[] = []
 
   for (const bucket of real) {
-    const state = bucket.health.overall === 'healthy' || bucket.health.overall === 'warning' || bucket.health.overall === 'critical'
-      ? bucket.health.overall
-      : 'unknown'
-    const availabilityPercent = (1 - bucket.metrics.error_rate) * 100
-    const style = state === 'unknown'
-      ? { ...STATUS_STYLE.unknown }
-      : {
-          ...(STATUS_STYLE[state]),
-          colorClass: availabilityBarClass(availabilityPercent),
-        }
+    const style = SIGNAL_STATE_STYLE[channelSignalState(bucket.metrics, props.ttftThresholds)]
+    if (!(bucket.metrics.request_count > 0)) {
+      bars.push({ key: bucket.bucket_start, colorClass: style.barClass, heightPct: style.heightPct, title: t('channelMonitorV3.timelineNoTraffic', { time: formatBucketTime(bucket.bucket_start) }) })
+      continue
+    }
     bars.push({
       key: bucket.bucket_start,
-      ...style,
+      colorClass: style.barClass,
+      heightPct: style.heightPct,
       title: t('channelMonitorV3.timelineTooltip', {
         time: formatBucketTime(bucket.bucket_start),
         availability: formatMonitorPercent(1 - bucket.metrics.error_rate, locale.value || 'zh-CN'),
@@ -182,16 +176,32 @@ const displayBars = computed<TimelineBar[]>(() => {
 
   const missing = Math.max(0, props.length - real.length)
   for (let index = 0; index < missing; index += 1) {
-    bars.push({ key: `empty-${index}`, ...STATUS_STYLE.unknown, title: '' })
+    bars.push({ key: `empty-${index}`, colorClass: SIGNAL_STATE_STYLE.unknown.barClass, heightPct: SIGNAL_STATE_STYLE.unknown.heightPct, title: '' })
   }
   return bars
 })
 
-const tooltipStyle = computed(() => ({
-  '--tooltip-left': `${tooltipPosition.value.left}px`,
-  '--tooltip-top': `${tooltipPosition.value.top}px`,
-  '--tooltip-x': tooltipPosition.value.x,
-}))
+const hoveredBar = computed(() => hoveredBarIndex.value === null ? null : displayBars.value[hoveredBarIndex.value] ?? null)
+
+// 提示框渲染后量实际宽度：贴边平移时箭头要按真实宽度换算，不能假设固定宽度或固定居中
+watch(() => hoveredBar.value?.title, async () => {
+  await nextTick()
+  if (tooltipEl.value) tooltipWidth.value = tooltipEl.value.offsetWidth
+})
+
+const tooltipStyle = computed(() => {
+  const viewportWidth = typeof document === 'undefined' ? Infinity : document.documentElement.clientWidth
+  const width = tooltipWidth.value
+  const { center, top } = tooltipAnchor.value
+  // 优先以色块为中心，放不下时贴边，但不越过左右留白
+  const left = Math.max(TOOLTIP_GUTTER, Math.min(center - width / 2, viewportWidth - TOOLTIP_GUTTER - width))
+  const arrow = Math.max(TOOLTIP_ARROW_INSET, Math.min(center - left, width - TOOLTIP_ARROW_INSET))
+  return {
+    '--tooltip-left': `${left}px`,
+    '--tooltip-top': `${top}px`,
+    '--tooltip-arrow-left': `${arrow}px`,
+  }
+})
 </script>
 
 <style scoped>
@@ -199,7 +209,7 @@ const tooltipStyle = computed(() => ({
 	display: block;
 	width: 100%;
 	min-height: 3px;
-	border-radius: 3px;
+	border-radius: 4px;
   transform-origin: bottom;
   animation: v3-soft-glass-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -207,7 +217,7 @@ const tooltipStyle = computed(() => ({
 .v3-timeline-bars {
 	display: flex;
 	position: relative;
-	height: 20px;
+	height: 24px;
 	width: 100%;
 	gap: 4px;
 	isolation: isolate;
@@ -275,7 +285,7 @@ const tooltipStyle = computed(() => ({
 	z-index: 50;
 	width: max-content;
 	max-width: min(280px, calc(100vw - 32px));
-	transform: translateX(var(--tooltip-x, -50%)) translateY(-100%);
+	transform: translateY(-100%);
 	border: 1px solid rgb(255 255 255 / 0.84);
 	border-radius: 9px;
 	background: rgb(15 23 42 / 0.92);
@@ -292,7 +302,7 @@ const tooltipStyle = computed(() => ({
 
 .v3-timeline-tooltip::after {
 	position: absolute;
-	left: 50%;
+	left: var(--tooltip-arrow-left, 50%);
 	bottom: -4px;
 	width: 7px;
 	height: 7px;
@@ -311,7 +321,7 @@ const tooltipStyle = computed(() => ({
 .v3-timeline-tooltip-enter-from,
 .v3-timeline-tooltip-leave-to {
 	opacity: 0;
-	transform: translateX(var(--tooltip-x, -50%)) translateY(calc(-100% + 3px)) scale(0.96);
+	transform: translateY(calc(-100% + 3px)) scale(0.96);
 }
 
 @keyframes v3-soft-glass-rise {

@@ -4,27 +4,27 @@
       <section class="signal-channel-command glass-card overflow-hidden p-0">
         <header class="flex flex-wrap items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 dark:border-dark-700 sm:px-6">
           <div class="min-w-0">
-            <h1 class="page-title flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-              <span class="grid h-8 w-8 place-items-center rounded-xl bg-primary-50 text-primary-500 dark:bg-primary-900/30 dark:text-primary-300"><Icon name="chart" size="sm" /></span>
+            <h1 class="page-title flex items-center gap-3 text-2xl font-bold text-gray-900 dark:text-white">
+              <span class="grid h-10 w-10 place-items-center rounded-xl bg-primary-50 text-primary-500 dark:bg-primary-900/30 dark:text-primary-300"><Icon name="chart" size="md" /></span>
               {{ t('channelMonitorV3.title') }}
             </h1>
-            <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <span class="h-2 w-2 rounded-full" :class="refreshing ? 'bg-gray-400' : 'bg-emerald-500'" />
               <span>{{ snapshot ? t('channelMonitorV3.updatedTo', { time: formatTime(snapshot.coverage.data_through) }) : t('common.loading') }}</span>
               <span v-if="snapshot && !snapshot.coverage.coverage_complete" class="badge badge-warning">{{ t('channelMonitorV3.partialCoverage') }}</span>
             </div>
           </div>
-          <button class="btn btn-secondary btn-icon h-8 w-8 rounded-lg" type="button" :disabled="loading || refreshing" :title="t('common.refresh')" @click="reload(false)"><Icon name="refresh" size="sm" :class="refreshing ? 'animate-spin' : ''" /></button>
+          <button class="btn btn-secondary btn-icon h-9 w-9 rounded-lg" type="button" :disabled="loading || refreshing" :title="t('common.refresh')" @click="reload(false)"><Icon name="refresh" size="sm" :class="refreshing ? 'animate-spin' : ''" /></button>
         </header>
         <div class="signal-channel-range flex flex-wrap items-center gap-2 px-4 py-3 sm:px-5">
-          <button v-for="option in ranges" :key="option.value" type="button" class="tab !px-2.5 !py-1 text-xs" :class="filter.range === option.value ? 'tab-active' : ''" @click="setRange(option.value)">{{ option.label }}</button>
+          <button v-for="option in ranges" :key="option.value" type="button" class="tab !px-3 !py-1.5 text-sm" :class="filter.range === option.value ? 'tab-active' : ''" @click="setRange(option.value)">{{ option.label }}</button>
           <span class="mx-1 hidden h-5 w-px bg-gray-200 dark:bg-dark-700 sm:block" />
-          <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('channelMonitorV3.description') }}</span>
-          <span v-if="snapshot" class="ml-auto text-xs font-medium tabular-nums text-gray-500 dark:text-gray-400">{{ t('channelMonitorV3.summary', { success: formatPercent(1 - (latestSnapshotMetrics?.error_rate ?? 0)), cache: formatPercent(latestSnapshotMetrics?.cache_rate ?? 0) }) }}</span>
+          <span class="text-sm text-gray-500 dark:text-gray-400" data-testid="channel-status-legend">{{ legendText }}</span>
+          <span v-if="snapshot" class="ml-auto text-sm font-medium tabular-nums text-gray-500 dark:text-gray-400">{{ t('channelMonitorV3.summary', { success: formatPercent(1 - (latestSnapshotMetrics?.error_rate ?? 0)), cache: formatPercent(latestSnapshotMetrics?.cache_rate ?? 0) }) }}</span>
         </div>
       </section>
 
-      <div v-if="loading && rows.length === 0" class="signal-channel-loading-grid grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <div v-if="loading && rows.length === 0" :class="['signal-channel-loading-grid', CARD_GRID_CLASS]">
         <div v-for="i in 8" :key="i" class="h-72 animate-pulse bg-white/60 dark:bg-dark-800" />
       </div>
       <EmptyState v-else-if="rows.length === 0" :title="t('channelMonitorV3.emptyTitle')" :description="t('channelMonitorV3.emptyDescription')" />
@@ -36,11 +36,8 @@
           :data-testid="block.kind === 'cluster' ? `channel-status-platform-${block.platform}` : 'channel-status-compact-platforms'"
         >
           <template v-if="block.kind === 'cluster'">
-            <h2 class="signal-platform-heading mb-3 flex items-center gap-2 px-1 text-sm font-semibold text-gray-700 dark:text-gray-200">
-              {{ providerLabel(block.platform) }}
-              <span class="rounded-full bg-gray-100 px-1.5 py-px font-mono text-[10px] font-medium text-gray-500 dark:bg-dark-700 dark:text-gray-400">{{ block.rows.length }}</span>
-            </h2>
-            <div class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <ChannelMonitorV3PlatformHeading :platform="block.platform" :count="block.rows.length" />
+            <div :class="CARD_GRID_CLASS">
               <ChannelMonitorV3Card
                 v-for="row in block.rows"
                 :key="row.group_id ?? `${row.platform}:${row.group_name ?? ''}`"
@@ -48,24 +45,26 @@
                 :user-rate-multiplier="getUserRateMultiplier(row.group_id)"
                 :countdown-seconds="countdownSeconds"
                 :timeline-length="timelineLength"
+                :ttft-thresholds="ttftThresholds"
               />
             </div>
           </template>
           <div
             v-else
-            class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+            :class="CARD_GRID_CLASS"
           >
             <div
               v-for="item in block.items"
               :key="item.row.group_id ?? `${item.platform}:${item.row.group_name ?? ''}`"
               :data-testid="`channel-status-platform-${item.platform}`"
             >
-              <h2 class="signal-platform-heading mb-3 px-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{{ providerLabel(item.platform) }}</h2>
+              <ChannelMonitorV3PlatformHeading :platform="item.platform" :count="1" />
               <ChannelMonitorV3Card
                 :row="item.row"
                 :user-rate-multiplier="getUserRateMultiplier(item.row.group_id)"
                 :countdown-seconds="countdownSeconds"
                 :timeline-length="timelineLength"
+                :ttft-thresholds="ttftThresholds"
               />
             </div>
           </div>
@@ -88,13 +87,21 @@ import userGroupsAPI from '@/api/groups'
 import type { MonitorFilter, MonitorMatrixResponse, MonitorRange, MonitorSnapshot } from '@/api/channelMonitorV2'
 import type { Group } from '@/types'
 import ChannelMonitorV3Card from '@/components/user/monitor/ChannelMonitorV3Card.vue'
-import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
-import { formatMonitorPercent } from '@/features/channel-monitor-v2/monitorFormat'
+import ChannelMonitorV3PlatformHeading from '@/components/user/monitor/ChannelMonitorV3PlatformHeading.vue'
+import {
+  SIGNAL_AVAILABILITY_HEALTHY_MIN,
+  SIGNAL_AVAILABILITY_WARNING_MIN,
+  formatMonitorPercent,
+  formatSignalSeconds,
+  type SignalTtftThresholds,
+} from '@/features/channel-monitor-v2/monitorFormat'
 import { buildChannelStatusLayout, channelStatusLayoutBlockKey } from '@/features/channel-monitor-v2/channelStatusLayout'
+
+// 断点按「视口 - 侧边栏」后的可用宽度估算，保证每张卡片至少约 360px，放得下大号指标数字
+const CARD_GRID_CLASS = 'grid grid-cols-1 gap-5 md:grid-cols-2 min-[1440px]:grid-cols-3 min-[2040px]:grid-cols-4'
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
-const { providerLabel } = useChannelMonitorFormat()
 const ranges = computed(() => [
   { value: '90m' as MonitorRange, label: t('channelMonitorV3.ranges.90m') },
   { value: '24h' as MonitorRange, label: t('channelMonitorV3.ranges.24h') },
@@ -132,6 +139,16 @@ const platformSections = computed(() => {
 })
 const layoutBlocks = computed(() => buildChannelStatusLayout(platformSections.value))
 const timelineLength = computed(() => ({ '90m': 18, '24h': 24, '7d': 14, '30d': 30 })[filter.value.range])
+const ttftThresholds = computed<SignalTtftThresholds | null>(() => {
+  const thresholds = snapshot.value?.config.health_thresholds
+  return thresholds ? { warning_ttft_ms: thresholds.warning_ttft_ms, critical_ttft_ms: thresholds.critical_ttft_ms } : null
+})
+const legendText = computed(() => {
+  const availability = t('channelMonitorV3.legend', { healthy: SIGNAL_AVAILABILITY_HEALTHY_MIN, warning: SIGNAL_AVAILABILITY_WARNING_MIN })
+  const thresholds = ttftThresholds.value
+  if (!thresholds) return availability
+  return `${availability} · ${t('channelMonitorV3.legendTtft', { warning: formatSignalSeconds(thresholds.warning_ttft_ms), critical: formatSignalSeconds(thresholds.critical_ttft_ms) })}`
+})
 const latestSnapshotMetrics = computed(() => {
   const trend = [...(snapshot.value?.trend ?? [])]
     .filter(point => point.bucket_start && point.metrics)

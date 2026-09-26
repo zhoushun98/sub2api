@@ -2,7 +2,8 @@
 export default {
   channelMonitorV3: {
     title: 'Channel status',
-    description: 'V2 passive usage · cache and availability',
+    legend: 'Worse of availability and first token · availability ≥{healthy}% green / ≥{warning}% amber / <{warning}% red',
+    legendTtft: 'first token <{warning} green / <{critical} amber',
     updatedTo: 'Updated to {time}',
     partialCoverage: 'Partial history coverage',
     loadFailed: 'Failed to load channel status',
@@ -19,6 +20,7 @@ export default {
     userRate: 'User rate',
     unknownGroup: 'Unknown group',
     timelineTooltip: '{time} · Availability {availability} · Cache {cache} · First token {ttft}',
+    timelineNoTraffic: '{time} · no requests',
     emptyTitle: 'No channel data',
     emptyDescription: 'There is no passive-monitor data for this time range yet',
     platformSection: '{platform}',

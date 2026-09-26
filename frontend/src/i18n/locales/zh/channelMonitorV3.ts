@@ -2,7 +2,8 @@
 export default {
   channelMonitorV3: {
     title: '渠道状态',
-    description: 'V2 被动用量 · 缓存率与可用率',
+    legend: '可用率与首 Token 取较差状态 · 可用率 ≥{healthy}% 绿 / ≥{warning}% 黄 / <{warning}% 红',
+    legendTtft: '首 Token <{warning} 绿 / <{critical} 黄',
     updatedTo: '更新至 {time}',
     partialCoverage: '部分历史覆盖',
     loadFailed: '渠道状态加载失败',
@@ -19,6 +20,7 @@ export default {
     userRate: '用户倍率',
     unknownGroup: '未知分组',
     timelineTooltip: '{time} · 可用率 {availability} · 缓存率 {cache} · 首 Token {ttft}',
+    timelineNoTraffic: '{time} · 暂无请求',
     emptyTitle: '暂无渠道数据',
     emptyDescription: '当前时间范围内还没有可展示的被动监控数据',
     platformSection: '{platform}',
