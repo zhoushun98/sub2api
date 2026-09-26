@@ -81,3 +81,12 @@ describe('ChannelMonitorV3Card status badge', () => {
     expect(wrapper.get('[data-testid="channel-status-badge"]').attributes('data-state')).toBe('critical')
   })
 })
+
+describe('ChannelMonitorV3Card with user-facing redacted metrics', () => {
+  it('shows real values instead of 样本不足 when counts are zeroed by the API', () => {
+    const redacted: MonitorMetric = { ...metrics(100, 0.02, 3000), success_requests: 0, error_requests: 0, request_count: 0, cache_rate_numerator: 0, cache_rate_denominator: 0, ttft: { sample_count: 0, p50_ms: 3000, p95_ms: null, avg_ms: null } }
+    const wrapper = mountCard([bucket('2026-09-09T12:00:00Z', redacted)])
+    expect(wrapper.get('[data-testid="channel-status-badge"]').attributes('data-state')).toBe('healthy')
+    expect(wrapper.findAll('.channel-signal-card__value').map(node => node.text())).not.toContain('-')
+  })
+})

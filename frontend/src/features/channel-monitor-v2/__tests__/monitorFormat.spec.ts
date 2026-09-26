@@ -14,6 +14,7 @@ import {
   formatMonitorTokensPerSecond,
   formatSignalSeconds,
   healthScoreClass,
+  metricHasTraffic,
   healthStateClass,
   scoreToBand,
   tokensPerSecondFromTpm,
@@ -185,5 +186,38 @@ describe('channel signal state', () => {
   it('formats legend seconds without trailing zeros', () => {
     expect(formatSignalSeconds(8000)).toBe('8s')
     expect(formatSignalSeconds(10500)).toBe('10.5s')
+  })
+})
+
+describe('channel signal state with user-facing redaction', () => {
+  // 用户端接口把绝对量抹成 0，只保留错误率、缓存率与延迟分位
+  function redacted(errorRate: number, ttftP50: number | null): MonitorMetric {
+    return {
+      success_requests: 0,
+      error_requests: 0,
+      request_count: 0,
+      token_count: 0,
+      rpm: 0,
+      tpm: 0,
+      error_rate: errorRate,
+      cache_rate: 0.9,
+      cache_rate_numerator: 0,
+      cache_rate_denominator: 0,
+      ttft: { sample_count: 0, p50_ms: ttftP50, p95_ms: null, avg_ms: null },
+      duration: { sample_count: 0, p50_ms: ttftP50 == null ? null : ttftP50 * 3, p95_ms: null, avg_ms: null },
+    }
+  }
+  const thresholds = { warning_ttft_ms: 10000, critical_ttft_ms: 25000 }
+
+  it('treats redacted buckets with latency or errors as having traffic', () => {
+    expect(metricHasTraffic(redacted(0.02, 3000))).toBe(true)
+    expect(metricHasTraffic(redacted(1, null))).toBe(true)
+    expect(metricHasTraffic(redacted(0, null))).toBe(false)
+  })
+
+  it('still bands first token when sample_count is redacted', () => {
+    expect(channelSignalState(redacted(0.02, 3000), thresholds)).toBe('healthy')
+    expect(channelSignalState(redacted(0.02, 12000), thresholds)).toBe('warning')
+    expect(channelSignalState(redacted(0, null), thresholds)).toBe('unknown')
   })
 })

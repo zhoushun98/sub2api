@@ -66,6 +66,7 @@ import {
   channelSignalState,
   formatMonitorMs,
   formatMonitorPercent,
+  metricHasTraffic,
   type SignalTtftThresholds,
 } from '@/features/channel-monitor-v2/monitorFormat'
 
@@ -157,7 +158,7 @@ const displayBars = computed<TimelineBar[]>(() => {
 
   for (const bucket of real) {
     const style = SIGNAL_STATE_STYLE[channelSignalState(bucket.metrics, props.ttftThresholds)]
-    if (!(bucket.metrics.request_count > 0)) {
+    if (!metricHasTraffic(bucket.metrics)) {
       bars.push({ key: bucket.bucket_start, colorClass: style.barClass, heightPct: style.heightPct, title: t('channelMonitorV3.timelineNoTraffic', { time: formatBucketTime(bucket.bucket_start) }) })
       continue
     }

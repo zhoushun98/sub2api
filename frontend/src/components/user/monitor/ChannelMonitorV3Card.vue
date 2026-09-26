@@ -54,6 +54,7 @@ import {
   channelSignalState,
   formatMonitorMs,
   formatMonitorPercent,
+  metricHasTraffic,
   ttftSignalState,
   type SignalTtftThresholds,
 } from '@/features/channel-monitor-v2/monitorFormat'
@@ -82,10 +83,10 @@ const formattedUserRate = computed(() => {
 })
 // 卡片展示最新一个有请求的时间桶；刚跨桶时最新桶可能为空，不能拿它显示 0% / 100%
 const latestMetrics = computed(() => [...props.row.buckets]
-  .filter(bucket => bucket.bucket_start && bucket.metrics?.request_count > 0)
+  .filter(bucket => bucket.bucket_start && metricHasTraffic(bucket.metrics))
   .sort((a, b) => Date.parse(a.bucket_start) - Date.parse(b.bucket_start))
   .at(-1)?.metrics ?? props.row.metrics)
-const hasTraffic = computed(() => latestMetrics.value.request_count > 0)
+const hasTraffic = computed(() => metricHasTraffic(latestMetrics.value))
 const signalState = computed(() => channelSignalState(latestMetrics.value, props.ttftThresholds))
 const cacheRate = computed(() => hasTraffic.value ? formatMonitorPercent(latestMetrics.value.cache_rate) : '-')
 const availabilityPercent = computed(() => (1 - latestMetrics.value.error_rate) * 100)

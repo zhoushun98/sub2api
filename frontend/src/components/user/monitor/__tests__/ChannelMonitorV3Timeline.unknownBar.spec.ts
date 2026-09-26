@@ -25,7 +25,7 @@ function metrics(requests: number, errorRate: number, ttftMs: number | null = 30
     cache_rate: 0,
     cache_rate_numerator: 0,
     cache_rate_denominator: 0,
-    ttft: { sample_count: ttftMs == null ? 0 : requests, p50_ms: ttftMs, p95_ms: null, avg_ms: null },
+    ttft: { sample_count: ttftMs == null ? 0 : requests, p50_ms: requests ? ttftMs : null, p95_ms: null, avg_ms: null },
     duration: { sample_count: 0, p50_ms: null, p95_ms: null, avg_ms: null },
   }
 }

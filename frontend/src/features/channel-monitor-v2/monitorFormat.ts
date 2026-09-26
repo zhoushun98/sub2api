@@ -92,10 +92,21 @@ export function ttftSignalState(ms: number | null | undefined, thresholds?: Sign
   return 'healthy'
 }
 
+/**
+ * 判断指标对应的时间窗口内是否有请求。
+ * 用户端接口会把 request_count、ttft.sample_count 等绝对量抹成 0（后端 redactChannelMonitorV2Metric），
+ * 只能依靠保留下来的错误率与延迟分位数：有任一延迟分位或错误率 > 0 即视为有请求。
+ */
+export function metricHasTraffic(metrics: MonitorMetric | null | undefined): boolean {
+  if (!metrics) return false
+  if (metrics.request_count > 0) return true
+  return metrics.error_rate > 0 || metrics.ttft?.p50_ms != null || metrics.duration?.p50_ms != null
+}
+
 export function channelSignalState(metrics: MonitorMetric | null | undefined, thresholds?: SignalTtftThresholds | null): HealthState {
-  if (!metrics || !(metrics.request_count > 0)) return 'unknown'
+  if (!metrics || !metricHasTraffic(metrics)) return 'unknown'
   const availability = availabilitySignalState((1 - metrics.error_rate) * 100)
-  const ttft = ttftSignalState(metrics.ttft?.sample_count ? metrics.ttft.p50_ms : null, thresholds)
+  const ttft = ttftSignalState(metrics.ttft?.p50_ms, thresholds)
   return SIGNAL_SEVERITY[ttft] > SIGNAL_SEVERITY[availability] ? ttft : availability
 }
 

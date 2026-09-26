@@ -20,6 +20,8 @@ const (
 	// Always refresh a small trailing window so late writes land without
 	// re-aggregating large history every tick.
 	channelMonitorV2RecentOverlap = 10 * time.Minute
+	// 停摆后追赶时单轮最多重算的跨度，避免一个事务扫过大的时间窗口。
+	channelMonitorV2CatchUpChunk = 6 * time.Hour
 
 	// Gentle backfill: small adaptive chunks, never default 24h hammering.
 	// Initial historical chunk after the 2h seed.
@@ -255,7 +257,12 @@ func (s *ChannelMonitorV2Aggregator) runOnce() {
 	}
 
 	// Always refresh the trailing overlap so late usage/error writes land in 1m facts.
-	if err := s.repo.RecomputeRange(ctx, now.Add(-channelMonitorV2RecentOverlap), now); err != nil {
+	// 若聚合器曾停摆（data_through 落后于 overlap），从水位接着补，避免永久空洞。
+	recentStart, recentEnd := now.Add(-channelMonitorV2RecentOverlap), now
+	if wm, err := s.repo.GetAggregationWatermark(ctx); err == nil && wm != nil {
+		recentStart, recentEnd = channelMonitorV2RecentWindow(now, wm.DataThrough)
+	}
+	if err := s.repo.RecomputeRange(ctx, recentStart, recentEnd); err != nil {
 		logger.LegacyPrintf("service.channel_monitor_v2", "[ChannelMonitorV2] overlap aggregation failed: %v", err)
 		return
 	}
@@ -302,6 +309,30 @@ func (s *ChannelMonitorV2Aggregator) runOnce() {
 		return
 	}
 	s.recordBackfillSuccess(start, time.Since(started), now)
+}
+
+// channelMonitorV2RecentWindow 返回本轮常规重算窗口。
+// 默认只刷新末尾 overlap；历史回补走完后没有任何流程会回头重算旧分钟，
+// 所以一旦停摆超过 overlap（拿不到锁、数据库抖动、进程卡住），那段数据会永久缺失。
+// 这里在 data_through 落后时从水位接着补，单轮最多推进 channelMonitorV2CatchUpChunk。
+func channelMonitorV2RecentWindow(now, dataThrough time.Time) (time.Time, time.Time) {
+	start := now.Add(-channelMonitorV2RecentOverlap)
+	if dataThrough.IsZero() {
+		return start, now
+	}
+	through := dataThrough.UTC().Truncate(time.Minute)
+	if !through.Before(start) {
+		return start, now
+	}
+	start = through.Add(-channelMonitorV2RecentOverlap)
+	if floor := now.Add(-channelMonitorV2RetentionMax); start.Before(floor) {
+		start = floor
+	}
+	end := start.Add(channelMonitorV2CatchUpChunk)
+	if end.After(now) {
+		end = now
+	}
+	return start, end
 }
 
 // channelMonitorV2MaxChunkForDepth returns the hard ceiling for a historical

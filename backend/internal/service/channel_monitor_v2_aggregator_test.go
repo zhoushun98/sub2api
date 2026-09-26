@@ -47,3 +47,29 @@ func TestChannelMonitorV2AggregatorAdaptiveChunk(t *testing.T) {
 	require.Greater(t, s.backfillChunk, 30*time.Minute)
 	require.LessOrEqual(t, s.backfillChunk, channelMonitorV2MaxChunkForDepth(now, cursor.Add(-30*time.Minute)))
 }
+
+func TestChannelMonitorV2RecentWindowCatchesUpAfterStall(t *testing.T) {
+	now := time.Date(2026, 9, 26, 16, 0, 0, 0, time.UTC)
+
+	// 正常运行：水位紧跟当前时间，只刷新末尾 overlap。
+	start, end := channelMonitorV2RecentWindow(now, now.Add(-time.Minute))
+	require.Equal(t, now.Add(-channelMonitorV2RecentOverlap), start)
+	require.Equal(t, now, end)
+
+	// 从未聚合过：同样只刷新 overlap，历史交给回补流程。
+	start, end = channelMonitorV2RecentWindow(now, time.Time{})
+	require.Equal(t, now.Add(-channelMonitorV2RecentOverlap), start)
+	require.Equal(t, now, end)
+
+	// 停摆 4.5 小时：从水位（再往前留 overlap）一直补到现在，不留空洞。
+	through := now.Add(-270 * time.Minute)
+	start, end = channelMonitorV2RecentWindow(now, through)
+	require.Equal(t, through.Add(-channelMonitorV2RecentOverlap), start)
+	require.Equal(t, now, end)
+
+	// 停摆超过单轮上限：本轮只推进一个追赶块，下轮从新的水位继续。
+	through = now.Add(-20 * time.Hour)
+	start, end = channelMonitorV2RecentWindow(now, through)
+	require.Equal(t, through.Add(-channelMonitorV2RecentOverlap), start)
+	require.Equal(t, start.Add(channelMonitorV2CatchUpChunk), end)
+}
