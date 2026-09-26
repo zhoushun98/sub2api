@@ -63,6 +63,30 @@ export function formatMonitorPercent(value: number, locale = monitorIntlLocale()
   }).format((value || 0) * 100)}%`
 }
 
+/**
+ * 按可用率（0-100）给用户端色块与数值上色。
+ * 区间由差到好依次判断、互不重叠：<30 黑、<50 红、<60 琥珀、<80 浅黄、<90 浅绿、>=90 深绿。
+ */
+export function availabilityBarClass(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return 'bg-gray-300 dark:bg-dark-600'
+  if (value < 30) return 'bg-gray-950 dark:bg-black'
+  if (value < 50) return 'bg-red-500 dark:bg-red-400'
+  if (value < 60) return 'bg-amber-400 dark:bg-amber-300'
+  if (value < 80) return 'bg-yellow-300 dark:bg-yellow-200'
+  if (value < 90) return 'bg-emerald-400 dark:bg-emerald-300'
+  return 'bg-emerald-600 dark:bg-emerald-400'
+}
+
+export function availabilityTextClass(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return 'text-gray-900 dark:text-gray-100'
+  if (value < 30) return 'text-gray-950 dark:text-white'
+  if (value < 50) return 'text-red-600 dark:text-red-400'
+  if (value < 60) return 'text-amber-700 dark:text-amber-300'
+  if (value < 80) return 'text-yellow-700 dark:text-yellow-300'
+  if (value < 90) return 'text-emerald-700 dark:text-emerald-300'
+  return 'text-emerald-800 dark:text-emerald-300'
+}
+
 export function formatMonitorMs(value: number | null | undefined): string {
   if (value == null) return '-'
   return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`
