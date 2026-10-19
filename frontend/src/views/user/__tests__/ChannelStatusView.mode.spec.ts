@@ -11,8 +11,9 @@ vi.mock('@/utils/featureFlags', () => ({
 vi.mock('../ChannelStatusV1View.vue', () => ({
   default: defineComponent({ name: 'ChannelStatusV1View', setup: () => () => h('div', { 'data-testid': 'v1' }) }),
 }))
-vi.mock('../ChannelStatusV2View.vue', () => ({
-  default: defineComponent({ name: 'ChannelStatusV2View', setup: () => () => h('div', { 'data-testid': 'v2' }) }),
+// otok: V2 模式渲染 fork 的卡片页
+vi.mock('../otok/OtokChannelStatusCardsView.vue', () => ({
+  default: defineComponent({ name: 'OtokChannelStatusCardsView', setup: () => () => h('div', { 'data-testid': 'v2' }) }),
 }))
 
 import ChannelStatusView from '../ChannelStatusView.vue'

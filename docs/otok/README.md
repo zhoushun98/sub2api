@@ -3,6 +3,7 @@
 本仓库 `zhoushun98/sub2api` 是 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api) 的 fork，在官方版本上增加 otok 定制功能。目前包含：
 
 - **USDT 链上充值**：支持 TRC20、BSC（BEP20）、Polygon、Ethereum（ERC20），详见 [USDT_PAYMENT.md](USDT_PAYMENT.md)。
+- **渠道状态卡片页**：V2 监控模式下，用户侧「渠道状态」（`/monitor`）改为按厂商分组的卡片页，每个分组一张卡，显示缓存率 / 可用率 / 首 Token 和近 N 个时间段的状态条。数据全部复用上游 V2 被动统计接口，后端无改动。代码在 `frontend/src/otok/monitorCards.ts`、`components/otok/monitor/`、`views/user/otok/`。
 - **禁用后台「在线更新」**：定制版只能通过镜像升级，防止被官方二进制覆盖。
 - **GHCR 自动构建镜像**：`.github/workflows/otok-image.yml`。
 
