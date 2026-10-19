@@ -70,10 +70,11 @@
             </button>
           </div>
           <span class="hidden h-5 w-px bg-gray-200 dark:bg-dark-700 md:block" aria-hidden="true"></span>
-          <span class="min-w-0 flex-1 text-xs text-gray-500 dark:text-gray-400">
+          <!-- 窄屏：口径说明单独占最后一行；md 起与时间窗、汇总同一行 -->
+          <span class="order-last w-full text-xs leading-relaxed text-gray-500 dark:text-gray-400 md:order-none md:w-auto md:min-w-0 md:flex-1">
             {{ t('otok.channelCards.legend') }}
           </span>
-          <span v-if="summary" class="shrink-0 text-xs font-medium tabular-nums text-gray-600 dark:text-gray-300">
+          <span v-if="summary" class="ml-auto shrink-0 text-xs font-medium tabular-nums text-gray-600 dark:text-gray-300">
             {{ summary }}
           </span>
         </div>
