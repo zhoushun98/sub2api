@@ -94,6 +94,7 @@
             </div>
           </div>
         </div>
+        <OtokUsdtOrderInfo v-if="isOtokUsdtPaymentType(selectedOrder.payment_type)" :order-id="selectedOrder.id" @updated="loadOrders" /> <!-- otok -->
         <!-- Audit Logs -->
         <div v-if="orderAuditLogs.length > 0" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <p class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('payment.admin.auditLogs') }}</p>
@@ -132,6 +133,8 @@ import AdminRefundDialog from '@/components/admin/payment/AdminRefundDialog.vue'
 import OrderStatusBadge from '@/components/payment/OrderStatusBadge.vue'
 import OrderTable from '@/components/payment/OrderTable.vue'
 import { currencySymbol } from '@/components/payment/currency'
+import OtokUsdtOrderInfo from '@/components/otok/OtokUsdtOrderInfo.vue' // otok
+import { OTOK_USDT_PAYMENT_TYPES, isOtokUsdtPaymentType } from '@/otok/payment' // otok
 
 interface AuditLog {
   id: number
@@ -207,6 +210,7 @@ const paymentTypeFilterOptions = computed(() => [
   { value: 'wxpay', label: t('payment.methods.wxpay') },
   { value: 'stripe', label: t('payment.methods.stripe') },
   { value: 'airwallex', label: t('payment.methods.airwallex') },
+  ...OTOK_USDT_PAYMENT_TYPES.map((value) => ({ value, label: t(`payment.methods.${value}`) })), // otok
 ])
 
 const orderTypeFilterOptions = computed(() => [

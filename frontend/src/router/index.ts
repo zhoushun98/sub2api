@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { otokRoutes } from '@/otok/routes' // otok
 
 /**
  * Route definitions with lazy loading
@@ -714,6 +715,8 @@ const routes: RouteRecordRaw[] = [
       requiresPayment: true
     }
   },
+
+  ...otokRoutes, // otok: fork 定制页面
 
   // ==================== 404 Not Found ====================
   {

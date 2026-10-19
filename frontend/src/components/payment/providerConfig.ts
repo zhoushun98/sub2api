@@ -1,6 +1,7 @@
 /**
  * Shared constants and types for payment provider management.
  */
+import { OTOK_PROVIDER_CONFIG_FIELDS, OTOK_PROVIDER_SUPPORTED_TYPES } from '@/otok/payment' // otok
 
 // --- Types ---
 
@@ -42,6 +43,7 @@ export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   wxpay: ['wxpay'],
   stripe: ['card', 'alipay', 'wxpay', 'link'],
   airwallex: ['airwallex'],
+  ...OTOK_PROVIDER_SUPPORTED_TYPES, // otok
 }
 
 /** Available payment modes for EasyPay providers. */
@@ -161,6 +163,7 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'currency', label: '', sensitive: false, defaultValue: 'CNY', hintKey: 'admin.settings.payment.field_paymentCurrencyHint', options: PAYMENT_CURRENCY_OPTIONS },
     { key: 'accountId', label: '', sensitive: false, optional: true, clearable: true, hintKey: 'admin.settings.payment.field_accountIdHint' },
   ],
+  ...OTOK_PROVIDER_CONFIG_FIELDS, // otok
 }
 
 // --- Helpers ---

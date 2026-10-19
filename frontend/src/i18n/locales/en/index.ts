@@ -5,8 +5,10 @@ import channelMonitorV2 from './channelMonitorV2'
 import batchImage from './batchImage'
 import admin from './admin'
 import misc from './misc'
+import otok from './otok' // otok
+import { otokMergeLocale } from '../../../otok/i18nMerge' // otok
 
-export default {
+export default otokMergeLocale({ // otok: 深合并 fork 文案，避免浅展开覆盖 payment 等对象
   ...landing,
   ...common,
   ...dashboard,
@@ -14,4 +16,4 @@ export default {
   ...batchImage,
   admin,
   ...misc,
-}
+}, otok) // otok

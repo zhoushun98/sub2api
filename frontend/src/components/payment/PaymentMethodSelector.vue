@@ -51,6 +51,7 @@ import wxpayIcon from '@/assets/icons/wxpay.svg'
 import stripeIcon from '@/assets/icons/stripe.svg'
 import airwallexIcon from '@/assets/icons/airwallex.svg'
 import paymentIcon from '@/assets/icons/payment.svg'
+import { OTOK_METHOD_ICONS } from '@/otok/payment' // otok
 
 export interface PaymentMethodOption {
   type: string
@@ -76,6 +77,7 @@ const METHOD_ICONS: Record<string, string> = {
   stripe: stripeIcon,
   airwallex: airwallexIcon,
   credit_card: paymentIcon,
+  ...OTOK_METHOD_ICONS, // otok
 }
 
 const sortedMethods = computed(() => {

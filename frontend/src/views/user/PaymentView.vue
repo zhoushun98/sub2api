@@ -14,7 +14,9 @@
         </div>
         <!-- Payment in progress (shared by recharge and subscription) -->
         <template v-if="paymentPhase === 'paying'">
+          <OtokUsdtTransferPanel v-if="isOtokUsdtPaymentType(paymentState.paymentType)" :order-id="paymentState.orderId" :payment-type="paymentState.paymentType" :expires-at="paymentState.expiresAt" :order-type="paymentState.orderType" :out-trade-no="paymentState.outTradeNo" @done="onPaymentDone" @success="onPaymentSuccess" @settled="onPaymentSettled" /> <!-- otok -->
           <PaymentStatusPanel
+            v-else
             :order-id="paymentState.orderId"
             :amount="paymentState.amount"
             :pay-amount="paymentState.payAmount"
@@ -107,6 +109,7 @@
                 </p>
               </div>
             </div>
+            <OtokUsdtQuote v-if="isOtokUsdtPaymentType(selectedMethod) && validAmount > 0" :amount="totalAmount" /> <!-- otok -->
             <button :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
               <span v-if="submitting" class="flex items-center justify-center gap-2">
                 <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
@@ -195,6 +198,7 @@
                   </div>
                 </div>
               </div>
+              <OtokUsdtQuote v-if="isOtokUsdtPaymentType(selectedMethod) && selectedPlan.price > 0" :amount="subTotalAmount" /> <!-- otok -->
               <button :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmitSubscription || submitting" @click="confirmSubscribe">
                 <span v-if="submitting" class="flex items-center justify-center gap-2">
                   <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
@@ -314,6 +318,9 @@ import {
 import { platformAccentBarClass, platformBadgeLightClass, platformBadgeClass, platformTextClass, platformLabel } from '@/utils/platformColors'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
+import OtokUsdtTransferPanel from '@/components/otok/OtokUsdtTransferPanel.vue' // otok
+import OtokUsdtQuote from '@/components/otok/OtokUsdtQuote.vue' // otok
+import { isOtokUsdtPaymentType } from '@/otok/payment' // otok
 import Icon from '@/components/icons/Icon.vue'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { planValiditySuffix as validitySuffixOf } from '@/components/payment/validity'
@@ -685,7 +692,7 @@ const methodOptions = computed<PaymentMethodOption[]>(() =>
   })
 )
 
-const feeRate = computed(() => checkout.value?.recharge_fee_rate ?? 0)
+const feeRate = computed(() => isOtokUsdtPaymentType(selectedMethod.value) ? 0 : (checkout.value?.recharge_fee_rate ?? 0)) // otok: USDT 渠道单独计费
 const feeAmount = computed(() =>
   feeRate.value > 0 && payBaseAmount.value > 0
     ? Math.ceil(((payBaseAmount.value * feeRate.value) / 100) * 100) / 100
