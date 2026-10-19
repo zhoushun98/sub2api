@@ -1,16 +1,16 @@
 # otok: fork 定制版镜像构建，推送到 GHCR（ghcr.io/zhoushun98/sub2api）。
 #
-# - push 到 otok 分支：只构建 amd64，镜像 tag 为 `otok`、`<VERSION>-otok.dev.<sha7>`、`sha-<sha7>`
 # - push tag `otok-v<上游版本>.<N>`（如 otok-v0.2.17.1）：构建 amd64 + arm64，
 #   镜像 tag 为 `<上游版本>-otok.<N>`（如 0.2.17-otok.1）、`latest`、`sha-<sha7>`
-# - 也可在 Actions 页面手动触发
+# - 也可在 Actions 页面手动触发：选 otok 分支时只构建 amd64，镜像 tag 为 `otok`、`<VERSION>-otok.dev.<sha7>`、`sha-<sha7>`；
+#   选 tag 时同上面的 tag 构建
+# - push 到 otok 分支不会触发（避免每次提交都跑）
 #
 # tag 故意不用 `v*` 开头，避免触发上游的 release.yml（fork 上该 workflow 已 disable）。
 name: otok image
 
 on:
   push:
-    branches: [otok]
     tags: ['otok-v*']
   workflow_dispatch:
 

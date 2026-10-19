@@ -33,6 +33,13 @@
 - `providerSensitiveConfigFields`
 - `providerPendingOrderProtectedConfigFields`
 
+## CI
+
+| 文件 | 位置 | 改动 | 目的 |
+| --- | --- | --- | --- |
+| `.github/workflows/backend-ci.yml` | `on:` | `push` + `pull_request` 改为 `push: tags: ['otok-v*']` + `workflow_dispatch` | 只在打 tag 或手动时跑，推送 `otok` 分支不触发 |
+| `.github/workflows/security-scan.yml` | `on:` | `push` + `pull_request` + 每周 `schedule` 改为 `push: tags: ['otok-v*']` + `workflow_dispatch` | 同上 |
+
 ## 前端
 
 | 文件 | 位置 | 改动 | 目的 |

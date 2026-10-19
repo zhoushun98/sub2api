@@ -62,7 +62,8 @@ git config rerere.enabled true   # 记住冲突的解决方式，下次同步自
    - 不要用 `make generate`，它会连 Ent 一起重新生成。
 8. **fork 上的 Actions**：
    - `release.yml`、`cla.yml` 已在 GitHub 上 disable（文件本身不改）。前者会被 `v*` tag 触发官方发布流程，还会把 VERSION 回写到 main。
-   - `backend-ci.yml`、`security-scan.yml` 保留，推送 `otok` 分支时会跑测试和 lint。
+   - `backend-ci.yml`、`security-scan.yml`、`otok-image.yml` 都只在 push `otok-v*` tag 或手动触发时运行，推送 `otok` 分支不触发任何 workflow。前两个是上游文件，触发条件的改动登记在 [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md)。
+   - 日常提交前在本地跑测试（见「同步上游」第 3 步的命令）。
    - 不要把上游的 tag 推到 origin。
 
 ## 同步上游
@@ -99,7 +100,7 @@ pnpm run typecheck && pnpm run test:run && pnpm run build
    - `payment.Provider` 接口。
    - `PaymentView.vue` 的付款面板。
    - 这些都是 USDT 功能依赖的上游行为。
-5. 推送 `otok` 分支，CI 会构建 `ghcr.io/zhoushun98/sub2api:otok`。确认无误后再打正式 tag（见下节）。
+5. 推送 `otok` 分支（不会触发 CI）。需要先出测试镜像时，在 Actions 页面对 `otok` 分支手动运行 `otok image`，得到 `ghcr.io/zhoushun98/sub2api:otok`。确认无误后再打正式 tag（见下节）。
 
 ## 发版
 
@@ -107,9 +108,11 @@ pnpm run typecheck && pnpm run test:run && pnpm run build
 
 | 触发方式 | 平台 | 镜像 tag |
 | --- | --- | --- |
-| push `otok` 分支 | amd64 | `otok`、`<VERSION>-otok.dev.<sha7>`、`sha-<sha7>` |
 | push tag `otok-v<上游版本>.<N>` | amd64 + arm64 | `<上游版本>-otok.<N>`、`latest`、`sha-<sha7>` |
-| 手动触发（workflow_dispatch） | 同上，按所选 ref 判断 | 同上 |
+| 手动触发，选 `otok` 分支 | amd64 | `otok`、`<VERSION>-otok.dev.<sha7>`、`sha-<sha7>` |
+| 手动触发，选 tag | 同 tag 构建 | 同 tag 构建 |
+
+推送 `otok` 分支不会构建镜像。
 
 正式发版：
 
