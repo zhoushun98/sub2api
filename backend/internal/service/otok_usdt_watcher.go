@@ -21,9 +21,13 @@ const (
 	otokUSDTTronOverlap       = 60 * time.Second
 	otokUSDTScanLookback      = 2 * time.Minute
 	otokUSDTEVMMaxCalls       = 8
-	otokUSDTTronMaxPages      = 5
-	otokUSDTWatcherOperator   = "otok-usdt-watcher"
-	otokUSDTEVMCursorAddress  = "*"
+	// otokUSDTEVMHeadLag：EVM 扫描终点比最新块少几个块。公共 RPC 背后各节点高度不一，
+	// 处理 eth_getLogs 的节点可能还没同步到 eth_blockNumber 返回的高度
+	// （"block range extends beyond current head block"）。
+	otokUSDTEVMHeadLag       = 3
+	otokUSDTTronMaxPages     = 5
+	otokUSDTWatcherOperator  = "otok-usdt-watcher"
+	otokUSDTEVMCursorAddress = "*"
 )
 
 // Start 启动后台监听。
@@ -185,6 +189,7 @@ func (s *OtokUSDTService) scanEVM(ctx context.Context, spec otokchain.Spec, ucfg
 		_ = otokSaveCursorError(ctx, s.entClient, spec.Network, otokUSDTEVMCursorAddress, err)
 		return
 	}
+	latest -= otokUSDTEVMHeadLag
 	windowBlocks := int64(math.Ceil(time.Since(otokEarliestCreated(rs)).Seconds()/spec.AvgBlockSeconds)) + 20
 	start := latest - windowBlocks
 	if cur, err := otokGetCursor(ctx, s.entClient, spec.Network, otokUSDTEVMCursorAddress); err == nil && cur != nil && cur.LastBlock > 0 {
