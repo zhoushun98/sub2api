@@ -44,6 +44,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		middleware.ProviderSet,
 		handler.ProviderSet,
 
+		// otok: fork 定制 ProviderSet
+		service.OtokProviderSet,
+		handler.OtokProviderSet,
+
 		// Server layer ProviderSet
 		server.ProviderSet,
 
@@ -131,6 +135,7 @@ func provideCleanup(
 	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
 	pluginManager *service.PluginManager,
+	otokUSDT *service.OtokUSDTService, // otok: USDT 链上监听
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -396,6 +401,12 @@ func provideCleanup(
 			{"OpenCodeGoUsageService", func() error {
 				if opencodeGoUsage != nil {
 					opencodeGoUsage.Stop()
+				}
+				return nil
+			}},
+			{"OtokUSDTService", func() error { // otok
+				if otokUSDT != nil {
+					otokUSDT.Stop()
 				}
 				return nil
 			}},

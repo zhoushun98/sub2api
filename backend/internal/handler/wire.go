@@ -160,7 +160,7 @@ func ProvideBatchImageHandler(
 
 // ProvideSystemHandler creates admin.SystemHandler with UpdateService
 func ProvideSystemHandler(updateService *service.UpdateService, lockService *service.SystemOperationLockService) *admin.SystemHandler {
-	return admin.NewSystemHandler(updateService, lockService)
+	return admin.NewSystemHandler(newOtokUpdateGuard(updateService), lockService) // otok: 禁用在线更新
 }
 
 // ProvideSettingHandler creates SettingHandler with version from BuildInfo
@@ -205,6 +205,7 @@ func ProvideHandlers(
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
+	otokHandlers *OtokHandlers, // otok: fork 定制接口
 ) *Handlers {
 	return &Handlers{
 		Auth:             authHandler,
@@ -228,6 +229,7 @@ func ProvideHandlers(
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
+		Otok:             otokHandlers, // otok
 	}
 }
 

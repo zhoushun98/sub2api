@@ -68,6 +68,7 @@ type Handlers struct {
 	ModelPlaza       *ModelPlazaHandler
 	AsyncImage       *AsyncImageHandler
 	BatchImage       *BatchImageHandler
+	Otok             *OtokHandlers // otok: fork 定制接口
 }
 
 // BuildInfo contains build-time information
