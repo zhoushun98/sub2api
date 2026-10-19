@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"math"
 	"strconv"
 	"strings"
 
@@ -23,13 +24,17 @@ func NewOtokUSDTHandler(svc *service.OtokUSDTService) *OtokUSDTHandler {
 	return &OtokUSDTHandler{svc: svc}
 }
 
+// otokQuoteMaxAmount 是报价接口接受的最大金额（元），只用于拦截异常输入。
+const otokQuoteMaxAmount = 1e8
+
 // GetQuote 返回汇率、手续费与可用网络；带 amount 时附预估应付 USDT。
 // GET /api/v1/payment/otok/usdt/quote
 func (h *OtokUSDTHandler) GetQuote(c *gin.Context) {
 	var amount float64
 	if raw := strings.TrimSpace(c.Query("amount")); raw != "" {
 		v, err := strconv.ParseFloat(raw, 64)
-		if err != nil || v < 0 {
+		// ParseFloat 接受 "NaN" / "Inf"，decimal.NewFromFloat 遇到它们会 panic。
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > otokQuoteMaxAmount {
 			response.BadRequest(c, "Invalid amount")
 			return
 		}

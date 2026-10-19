@@ -31,6 +31,9 @@ func (s *OtokUSDTService) Start() {
 	if s == nil || s.paymentSvc == nil || s.entClient == nil || s.interval <= 0 {
 		return
 	}
+	if otokchain.IsTestnet() {
+		slog.Warn("[OtokUSDT] OTOK_USDT_TESTNET is enabled: watching TESTNET contracts, do not use in production")
+	}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -151,13 +154,19 @@ func (s *OtokUSDTService) scanTron(ctx context.Context, spec otokchain.Spec, ucf
 			since = resume
 		}
 	}
-	transfers, maxTs, scanErr := c.IncomingTransfers(ctx, addr, since, otokUSDTTronMaxPages)
+	transfers, maxTs, more, scanErr := c.IncomingTransfers(ctx, addr, since, otokUSDTTronMaxPages)
 	rows := s.recordTransfers(ctx, spec, rs[0], transfers)
 	if scanErr != nil {
 		slog.Warn("[OtokUSDT] tron scan failed", "address", addr, "error", scanErr)
 		_ = otokSaveCursorError(ctx, s.entClient, spec.Network, addr, scanErr)
 	} else {
-		_ = otokSaveCursorSuccess(ctx, s.entClient, spec.Network, addr, 0, maxTs)
+		cursorTs := maxTs
+		if more {
+			// 翻页到上限仍有数据（如被大量小额转账刷屏）：下一轮直接从 maxTs 继续，
+			// 不再回退重叠窗口，避免在同一段时间里原地打转。
+			cursorTs = maxTs + otokUSDTTronOverlap.Milliseconds()
+		}
+		_ = otokSaveCursorSuccess(ctx, s.entClient, spec.Network, addr, 0, cursorTs)
 	}
 	s.matchTransfers(ctx, rows, rs)
 }
@@ -236,9 +245,14 @@ func (s *OtokUSDTService) scanEVM(ctx context.Context, spec otokchain.Spec, ucfg
 	s.matchTransfers(ctx, rows, rs)
 }
 
+// recordTransfers 记录扫描到的转账；不足 0.01 USDT 的转账（地址投毒等垃圾转账）直接忽略。
 func (s *OtokUSDTService) recordTransfers(ctx context.Context, spec otokchain.Spec, ref *otokUSDTReservation, transfers []otokchain.Transfer) []*otokUSDTTransfer {
 	rows := make([]*otokUSDTTransfer, 0, len(transfers))
+	minRaw := otokchain.CentsToRaw(1, spec.Decimals)
 	for _, t := range transfers {
+		if t.Amount == nil || t.Amount.Cmp(minRaw) < 0 {
+			continue
+		}
 		row, err := otokUpsertTransfer(ctx, s.entClient, t, ref.TokenContract, spec.Decimals, otokSourceWatcher)
 		if err != nil {
 			slog.Warn("[OtokUSDT] record transfer failed", "tx", t.TxHash, "error", err)
@@ -249,33 +263,27 @@ func (s *OtokUSDTService) recordTransfers(ctx context.Context, spec otokchain.Sp
 	return rows
 }
 
-// matchTransfers 把未绑定的转账按（地址, 精确金额, 时间窗口）匹配到等待中的预留。
+// matchTransfers 把未绑定的转账按（地址, 精确金额, 时间窗口）匹配到等待中的预留，规则见 otokTransferAutoMatchable。
 func (s *OtokUSDTService) matchTransfers(ctx context.Context, rows []*otokUSDTTransfer, rs []*otokUSDTReservation) {
 	index := make(map[string]*otokUSDTReservation, len(rs))
 	for _, r := range rs {
 		index[fmt.Sprintf("%s|%d", r.ToAddressNorm, r.AmountCents)] = r
 	}
 	for _, row := range rows {
-		if row.OrderID.Valid || row.Status != otokTransferSeen || !row.BlockTime.Valid {
-			continue
-		}
 		cents, exact := row.AmountCents()
 		if !exact {
 			continue
 		}
 		key := fmt.Sprintf("%s|%d", row.ToAddressNorm, cents)
 		r := index[key]
-		if r == nil {
-			continue
-		}
-		if !otokTransferInWindow(otokchain.Transfer{BlockTime: row.BlockTime.Time}, r) {
+		if r == nil || !otokTransferAutoMatchable(row, r) {
 			continue
 		}
 		order, err := s.entClient.PaymentOrder.Get(ctx, r.OrderID)
 		if err != nil || !otokOrderMatchable(order.Status) {
 			continue
 		}
-		ok, err := s.bindTransfer(ctx, row.ID, r.OrderID, "matched by watcher")
+		ok, err := s.bindTransfer(ctx, row.ID, r.OrderID, "matched by watcher", false)
 		if err != nil {
 			slog.Warn("[OtokUSDT] bind transfer failed", "tx", row.TxHash, "order", r.OrderID, "error", err)
 			continue

@@ -13,6 +13,7 @@ export default {
     },
     errors: {
       USDT_AMOUNT_SLOTS_EXHAUSTED: '当前该金额下单人数较多，请稍后重试或调整金额',
+      USDT_TOO_MANY_ACTIVE_ORDERS: '未完成的 USDT 订单过多，请先完成付款，或等旧订单失效后再试',
       USDT_PROVIDER_EXISTS: '已存在启用中的 USDT 服务商，同时只能启用一个',
       USDT_CHAIN_UNAVAILABLE: '链上数据查询暂时失败，请稍后重试',
       USDT_CREDIT_FAILED: '到账处理失败，系统会自动重试，请稍后刷新',
@@ -22,7 +23,7 @@ export default {
       USDT_TRANSFER_BOUND: '该转账已关联订单，不能忽略',
       USDT_TX_ALREADY_USED: '该交易已被其他订单使用',
       USDT_TX_AMBIGUOUS: '该交易包含多笔转账，请填写日志序号（log index）',
-      USDT_TX_AMOUNT_MISMATCH: '转账金额或时间与订单不符，已提交人工审核',
+      USDT_TX_AMOUNT_MISMATCH: '转账金额或时间与本订单不符，无法自动确认，请联系客服核实',
       USDT_TX_FAILED: '该交易在链上执行失败',
       USDT_TX_INVALID: '交易哈希格式不正确',
       USDT_TX_NOT_FOUND: '链上未找到该交易，请确认网络和哈希是否正确',
@@ -61,7 +62,7 @@ export default {
     },
     usdt: {
       quoteEstimate: '预计应付约 {amount} USDT',
-      quoteDetail: '汇率 1 USDT = {rate} 元，手续费 {fee}%。下单后会在此基础上加 0.00～0.99 USDT 的识别尾差，请以订单页显示的金额为准。',
+      quoteDetail: '汇率 1 USDT = {rate} 元，手续费 {fee}%。下单后会在此基础上加 0.01～0.99 USDT 的识别尾差，请以订单页显示的金额为准。',
       quoteUnavailable: 'USDT 报价暂不可用',
       title: '{network} 转账支付',
       networkWarning: '仅支持 {network} 网络的 USDT，转错网络或币种将无法到账且无法退回。',

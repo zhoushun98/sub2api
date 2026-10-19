@@ -136,6 +136,25 @@ describe('OtokUsdtTransferPanel', () => {
     expect(wrapper.emitted('settled')?.[0]).toEqual(['expired'])
   })
 
+  it('订单已取消且没有转账时立即显示已取消', async () => {
+    getUsdtOrder.mockResolvedValue({ data: detailFactory({ order_status: 'CANCELLED' }) })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.emitted('settled')?.[0]).toEqual(['cancelled'])
+  })
+
+  it('取消前已检测到转账时继续等待确认', async () => {
+    getUsdtOrder.mockResolvedValue({
+      data: detailFactory({ order_status: 'CANCELLED', transfer: { id: 1, status: 'bound', confirmations: 3 } }),
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.emitted('settled')).toBeUndefined()
+    expect(wrapper.text()).toContain('otok.usdt.detected')
+  })
+
   it('有关联转账时显示确认中，不提供 TxHash 输入', async () => {
     getUsdtOrder.mockResolvedValue({
       data: detailFactory({

@@ -80,7 +80,7 @@ func (s *PaymentService) otokPrepareUSDTOrderInTx(ctx context.Context, tx *dbent
 		ExpiresAt:       expiresAt,
 		ReservedUntil:   expiresAt.Add(time.Duration(ucfg.GraceMinutes) * time.Minute),
 	}
-	if err := otokReserveAmount(ctx, tx, r); err != nil {
+	if err := otokReserveAmount(ctx, tx, req.UserID, r); err != nil {
 		return nil, err
 	}
 	snapshot := maps.Clone(order.ProviderSnapshot)

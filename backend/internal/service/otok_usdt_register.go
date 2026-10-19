@@ -7,7 +7,11 @@ import "github.com/Wei-Shaw/sub2api/internal/payment"
 // 注意：审计脱敏表 auditBodySensitiveExactKeys 在 init() 之前就已构建，这里新增的
 // 敏感字段不会进入它的精确匹配集合；字段名必须能被审计子串规则（如 "apikey"）命中，
 // 由 TestOtokUSDTSensitiveFieldsCoveredByAudit 守护。
+//
+// RPC 地址（ethRpcUrl 等）不算敏感字段，后台需要回显；但 Infura / Alchemy 这类地址的路径里
+// 带着 key，所以在审计日志里按子串 "rpcurl" 脱敏。
 func init() {
+	auditBodySensitiveSubstrings = append(auditBodySensitiveSubstrings, "rpcurl")
 	validProviderKeys[payment.TypeOtokUSDT] = true
 	providerSensitiveConfigFields[payment.TypeOtokUSDT] = map[string]struct{}{
 		"trongridapikey": {},

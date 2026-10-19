@@ -48,7 +48,7 @@ export const OTOK_PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
 
 /**
  * 预估应付 USDT：ceil(站内金额 × (1 + 手续费%/100) ÷ 汇率, 2 位小数)。
- * 与后端 otokUSDTQuoteCents 同一公式；实际金额另有 0.00~0.99 的识别尾差。
+ * 与后端 otokUSDTQuoteCents 同一公式；实际金额另有 0.01~0.99 的识别尾差。
  */
 export function otokEstimateUsdt(amount: number, exchangeRate: number, feeRatePercent: number): number {
   if (!(amount > 0) || !(exchangeRate > 0)) return 0

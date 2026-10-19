@@ -1,6 +1,9 @@
 package routes
 
 import (
+	"log/slog"
+	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -18,6 +21,35 @@ const (
 	otokUSDTSubmitTxRateLimit       = 10
 	otokUSDTSubmitTxRateLimitWindow = time.Minute
 )
+
+// otokUserRateLimit 按登录用户限流（IP 限流之外再加一层，换 IP 也绕不过去）。
+// 每次提交都会查询链上节点 / TronGrid，消耗的是站点自己的 API 配额。Redis 异常时放行。
+func otokUserRateLimit(limiter *ratelimit.RateLimiter, key string, limit int, window time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		subject, ok := middleware.GetAuthSubjectFromContext(c)
+		if !ok || subject.UserID <= 0 {
+			c.Next()
+			return
+		}
+		res, err := limiter.Allow(c.Request.Context(), key+":user:"+strconv.FormatInt(subject.UserID, 10), limit, window)
+		if err != nil {
+			slog.Warn("[OtokUSDT] user rate limit check failed, allowing request", "key", key, "error", err)
+			c.Next()
+			return
+		}
+		if !res.Allowed {
+			if res.RetryAfter > 0 {
+				c.Header("Retry-After", strconv.FormatInt(int64((res.RetryAfter+time.Second-1)/time.Second), 10))
+			}
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+				"error":   "rate limit exceeded",
+				"message": "Too many requests, please try again later",
+			})
+			return
+		}
+		c.Next()
+	}
+}
 
 // RegisterOtokRoutes 注册 fork 定制的用户端与管理端接口。
 func RegisterOtokRoutes(
@@ -44,6 +76,7 @@ func RegisterOtokRoutes(
 			user.GET("/orders/:id", h.USDT.GetOrder)
 			user.POST("/orders/:id/tx",
 				submitLimiter.Limit("otok-usdt-submit-tx", otokUSDTSubmitTxRateLimit, otokUSDTSubmitTxRateLimitWindow),
+				otokUserRateLimit(submitLimiter, "otok-usdt-submit-tx", otokUSDTSubmitTxRateLimit, otokUSDTSubmitTxRateLimitWindow),
 				h.USDT.SubmitTx)
 		}
 	}

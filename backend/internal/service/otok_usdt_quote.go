@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -22,6 +23,9 @@ var (
 func otokUSDTQuoteCents(stationAmount float64, feeRate, exchangeRate decimal.Decimal) (int64, error) {
 	if !exchangeRate.IsPositive() {
 		return 0, fmt.Errorf("exchange rate must be positive")
+	}
+	if math.IsNaN(stationAmount) || math.IsInf(stationAmount, 0) {
+		return 0, fmt.Errorf("amount must be a finite number")
 	}
 	station := decimal.NewFromFloat(stationAmount).Round(2)
 	if !station.IsPositive() {
@@ -63,7 +67,7 @@ type OtokUSDTQuote struct {
 	FeeRate       string                `json:"fee_rate"`
 	ExpireMinutes int                   `json:"expire_minutes"`
 	Networks      []OtokUSDTNetworkInfo `json:"networks"`
-	// EstimatedAmount 为传入 amount 时的预估应付 USDT（不含 0.00~0.99 的识别尾差）。
+	// EstimatedAmount 为传入 amount 时的预估应付 USDT（不含 0.01~0.99 的识别尾差）。
 	EstimatedAmount string `json:"estimated_amount,omitempty"`
 }
 

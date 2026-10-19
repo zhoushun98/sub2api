@@ -77,16 +77,17 @@ type tronTRC20Page struct {
 }
 
 // IncomingTransfers 拉取 minTimestampMs 之后已固化（only_confirmed）的转入 USDT 转账，
-// 按区块时间升序，最多翻 maxPages 页。返回转账以及本次见到的最大区块时间（毫秒）。
-func (c *TronClient) IncomingTransfers(ctx context.Context, toAddr string, minTimestampMs int64, maxPages int) ([]Transfer, int64, error) {
+// 按区块时间升序，最多翻 maxPages 页。返回转账、本次见到的最大区块时间（毫秒），
+// 以及翻到 maxPages 页后是否仍有未读数据（more）。
+func (c *TronClient) IncomingTransfers(ctx context.Context, toAddr string, minTimestampMs int64, maxPages int) (transfers []Transfer, maxTs int64, more bool, err error) {
 	if maxPages <= 0 {
 		maxPages = 1
 	}
 	var (
 		out         []Transfer
-		maxTs       = minTimestampMs
 		fingerprint string
 	)
+	maxTs = minTimestampMs
 	for page := 0; page < maxPages; page++ {
 		q := url.Values{}
 		q.Set("only_to", "true")
@@ -103,10 +104,10 @@ func (c *TronClient) IncomingTransfers(ctx context.Context, toAddr string, minTi
 		endpoint := fmt.Sprintf("%s/v1/accounts/%s/transactions/trc20?%s", c.base, url.PathEscape(toAddr), q.Encode())
 		var resp tronTRC20Page
 		if err := doJSON(ctx, c.hc, http.MethodGet, endpoint, c.header(), nil, &resp); err != nil {
-			return out, maxTs, fmt.Errorf("trongrid trc20 list: %w", err)
+			return out, maxTs, false, fmt.Errorf("trongrid trc20 list: %w", err)
 		}
 		if !resp.Success {
-			return out, maxTs, fmt.Errorf("trongrid trc20 list: %s", strings.TrimSpace(resp.Error))
+			return out, maxTs, false, fmt.Errorf("trongrid trc20 list: %s", strings.TrimSpace(resp.Error))
 		}
 		for _, item := range resp.Data {
 			if item.Type != "Transfer" || item.TokenInfo.Address != c.contractB58 || item.To != toAddr {
@@ -136,9 +137,10 @@ func (c *TronClient) IncomingTransfers(ctx context.Context, toAddr string, minTi
 		if fingerprint == "" || len(resp.Data) == 0 {
 			break
 		}
+		more = page == maxPages-1
 	}
 	assignTronLogIndexes(out)
-	return out, maxTs, nil
+	return out, maxTs, more, nil
 }
 
 type tronTxInfo struct {

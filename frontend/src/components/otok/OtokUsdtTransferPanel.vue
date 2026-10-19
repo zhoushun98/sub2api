@@ -272,10 +272,15 @@ function applyDetail(next: OtokUsdtOrderDetail) {
     setOutcome('expired')
     return
   }
+  // 已取消的订单不再自动识别新转账；取消前已检测到的转账仍由后台继续确认入账。
+  if (next.order_status === 'CANCELLED' && !next.transfer) {
+    setOutcome('cancelled')
+    return
+  }
   // 宽限期结束、金额已释放且没有关联转账时才判定为过期；有转账时交给后台继续处理。
   const windowClosed = Date.now() >= new Date(next.reserved_until).getTime() || next.reservation_status === 'released'
   if (windowClosed && !next.transfer) {
-    setOutcome(next.order_status === 'CANCELLED' ? 'cancelled' : 'expired')
+    setOutcome('expired')
   }
 }
 

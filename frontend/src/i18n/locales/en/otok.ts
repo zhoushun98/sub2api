@@ -13,6 +13,7 @@ export default {
     },
     errors: {
       USDT_AMOUNT_SLOTS_EXHAUSTED: 'Too many pending orders for this amount. Please retry later or change the amount.',
+      USDT_TOO_MANY_ACTIVE_ORDERS: 'Too many unpaid USDT orders. Pay an existing order or wait for older ones to expire.',
       USDT_PROVIDER_EXISTS: 'An enabled USDT provider already exists. Only one can be enabled at a time.',
       USDT_CHAIN_UNAVAILABLE: 'Blockchain query failed. Please try again later.',
       USDT_CREDIT_FAILED: 'Crediting failed. The system will retry automatically; please refresh later.',
@@ -22,7 +23,7 @@ export default {
       USDT_TRANSFER_BOUND: 'This transfer is linked to an order and cannot be ignored.',
       USDT_TX_ALREADY_USED: 'This transaction has already been used by another order.',
       USDT_TX_AMBIGUOUS: 'This transaction contains multiple transfers. Please specify the log index.',
-      USDT_TX_AMOUNT_MISMATCH: 'The amount or time does not match this order. It has been sent for manual review.',
+      USDT_TX_AMOUNT_MISMATCH: 'The amount or time does not match this order, so it cannot be confirmed automatically. Please contact support.',
       USDT_TX_FAILED: 'This transaction failed on-chain.',
       USDT_TX_INVALID: 'Invalid transaction hash.',
       USDT_TX_NOT_FOUND: 'Transaction not found on-chain. Please check the network and hash.',
@@ -61,7 +62,7 @@ export default {
     },
     usdt: {
       quoteEstimate: 'Estimated {amount} USDT',
-      quoteDetail: 'Rate 1 USDT = {rate} CNY, fee {fee}%. A 0.00–0.99 USDT identification offset is added when the order is created; pay the amount shown on the order page.',
+      quoteDetail: 'Rate 1 USDT = {rate} CNY, fee {fee}%. A 0.01–0.99 USDT identification offset is added when the order is created; pay the amount shown on the order page.',
       quoteUnavailable: 'USDT quote unavailable',
       title: 'Pay via {network}',
       networkWarning: 'Only USDT on the {network} network is supported. Funds sent on another network or token cannot be credited or returned.',

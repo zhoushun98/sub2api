@@ -19,8 +19,9 @@ const transferEventTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628
 const (
 	// DefaultEVMChunk 是 eth_getLogs 单次扫描的初始区块跨度。
 	DefaultEVMChunk int64 = 2000
-	minEVMChunk     int64 = 25
-	maxEVMChunk     int64 = 5000
+	// minEVMChunk 允许降到单个区块：收款地址被大量垃圾转账刷屏时，节点可能连很小的跨度都返回超限。
+	minEVMChunk int64 = 1
+	maxEVMChunk int64 = 5000
 )
 
 // EVMClient 通过标准 JSON-RPC 读取 ERC20 USDT 转账。
@@ -281,7 +282,7 @@ func (c *EVMClient) ScanTransfers(ctx context.Context, fromBlock, toBlock int64,
 		fullChunk := end-cur+1 == chunk
 		cur = end + 1
 		if fullChunk && chunk < maxEVMChunk {
-			chunk = chunk * 3 / 2
+			chunk = chunk*3/2 + 1 // +1 保证跨度降到 1 后仍能逐步放大
 			if chunk > maxEVMChunk {
 				chunk = maxEVMChunk
 			}

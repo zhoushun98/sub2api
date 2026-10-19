@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -29,8 +30,9 @@ const (
 	otokUSDTMaxCreditAttempts = 5
 	// otokUSDTDropAfter：已绑定的 EVM 交易在链上消失（重组）超过该时长后解除绑定。
 	otokUSDTDropAfter = 15 * time.Minute
-	// otokUSDTMatchSlack：转账区块时间允许早于下单时间的容差（节点时钟偏差）。
-	otokUSDTMatchSlack = 60 * time.Second
+	// otokUSDTMinPayDelay：转账区块时间至少晚于下单时间这么久，才会匹配到该订单。
+	// 正常用户不可能在下单后几秒内完成转账并上链；更早的转账多半是别人的迟到付款。
+	otokUSDTMinPayDelay = 10 * time.Second
 	// otokUSDTExpiredRecoverAge：上游只接受 5 分钟内过期的订单入账，超过时先刷新 updated_at。
 	otokUSDTExpiredRecoverAge = 4 * time.Minute
 	otokUSDTHTTPTimeout       = 15 * time.Second
@@ -86,6 +88,19 @@ func otokHTTPClientOptions() httpclient.Options {
 	return httpclient.Options{Timeout: otokUSDTHTTPTimeout, ValidateResolvedIP: !allowPrivate}
 }
 
+// otokHTTPClient 返回不跟随重定向的客户端：RPC / TronGrid 不需要重定向，
+// 跟随重定向会把 TRON-PRO-API-KEY 等自定义请求头带给第三方主机。
+// httpclient.GetClient 返回的是共享实例，这里复制一份再改。
+func otokHTTPClient() (*http.Client, error) {
+	shared, err := httpclient.GetClient(otokHTTPClientOptions())
+	if err != nil {
+		return nil, err
+	}
+	hc := *shared
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &hc, nil
+}
+
 func (s *OtokUSDTService) evmClient(spec otokchain.Spec, endpoint string) (*otokchain.EVMClient, error) {
 	key := string(spec.Network) + "|" + endpoint
 	s.clientsMu.Lock()
@@ -93,7 +108,7 @@ func (s *OtokUSDTService) evmClient(spec otokchain.Spec, endpoint string) (*otok
 	if c, ok := s.evmClients[key]; ok {
 		return c, nil
 	}
-	hc, err := httpclient.GetClient(otokHTTPClientOptions())
+	hc, err := otokHTTPClient()
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +127,7 @@ func (s *OtokUSDTService) tronClient(spec otokchain.Spec, apiKey string) (*otokc
 	if c, ok := s.tronClients[key]; ok {
 		return c, nil
 	}
-	hc, err := httpclient.GetClient(otokHTTPClientOptions())
+	hc, err := otokHTTPClient()
 	if err != nil {
 		return nil, err
 	}
@@ -184,8 +199,10 @@ func otokOrderPaidLike(status string) bool {
 	return false
 }
 
+// otokOrderMatchable 报告订单是否还能自动匹配新的转账。已取消的订单不再匹配：取消后才到的
+// 转账留给管理员补单，避免被取消（含管理员取消）的订单自动复活。
 func otokOrderMatchable(status string) bool {
-	return status == OrderStatusPending || status == OrderStatusExpired || status == OrderStatusCancelled
+	return status == OrderStatusPending || status == OrderStatusExpired
 }
 
 // otokChainCheck 是对一笔已绑定转账的链上复核结果。
@@ -309,6 +326,14 @@ func (s *OtokUSDTService) creditBoundTransfer(ctx context.Context, t *otokUSDTTr
 	if order.Status == OrderStatusFailed && order.PaidAt == nil {
 		return false, otokSetTransferStatus(ctx, s.entClient, t.ID, otokTransferReview, "order failed before payment; handle manually", false)
 	}
+	if note := otokBoundTransferMismatch(t, r); note != "" {
+		// 兜底：任何入口绑定的转账，只要网络、地址或金额与预留不一致（管理员补单除外）都不入账。
+		slog.Warn("[OtokUSDT] bound transfer does not match reservation, sending to review", "tx", t.TxHash, "order", r.OrderID, "reason", note)
+		if err := otokUnbindTransfer(ctx, s.entClient, t.ID, note); err != nil {
+			return false, err
+		}
+		return false, otokSetTransferStatus(ctx, s.entClient, t.ID, otokTransferReview, note, false)
+	}
 
 	check, err := s.verifyOnChain(ctx, t, s.instanceConfig(ctx, r.InstanceID))
 	if err != nil {
@@ -373,6 +398,20 @@ func (s *OtokUSDTService) creditBoundTransfer(ctx context.Context, t *otokUSDTTr
 	return false, notifyErr
 }
 
+// otokBoundTransferMismatch 校验已绑定转账与预留是否一致，不一致时返回原因。
+func otokBoundTransferMismatch(t *otokUSDTTransfer, r *otokUSDTReservation) string {
+	if t.Network != r.Network || t.ToAddressNorm != r.ToAddressNorm {
+		return fmt.Sprintf("transfer %s/%s does not match order %s/%s", t.Network, t.ToAddressNorm, r.Network, r.ToAddressNorm)
+	}
+	if t.AmountOverride {
+		return ""
+	}
+	if cents, exact := t.AmountCents(); !exact || cents != r.AmountCents {
+		return fmt.Sprintf("amount %s does not match order amount %s", otokchain.FormatRaw(t.AmountRaw, t.Decimals), otokchain.FormatCents(r.AmountCents))
+	}
+	return ""
+}
+
 func (s *OtokUSDTService) markCredited(ctx context.Context, t *otokUSDTTransfer, r *otokUSDTReservation) error {
 	if err := otokSetTransferStatus(ctx, s.entClient, t.ID, otokTransferCredited, "", false); err != nil {
 		return err
@@ -380,14 +419,14 @@ func (s *OtokUSDTService) markCredited(ctx context.Context, t *otokUSDTTransfer,
 	return otokMarkReservationCredited(ctx, s.entClient, r.OrderID)
 }
 
-// bindTransfer 在事务内把转账绑定到订单。
-func (s *OtokUSDTService) bindTransfer(ctx context.Context, transferID, orderID int64, note string) (bool, error) {
+// bindTransfer 在事务内把转账绑定到订单；admin 的含义见 otokBindTransfer。
+func (s *OtokUSDTService) bindTransfer(ctx context.Context, transferID, orderID int64, note string, admin bool) (bool, error) {
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	ok, err := otokBindTransfer(ctx, tx, transferID, orderID, note)
+	ok, err := otokBindTransfer(ctx, tx, transferID, orderID, note, admin)
 	if err != nil || !ok {
 		return false, err
 	}
@@ -460,11 +499,28 @@ func (s *OtokUSDTService) fetchTxTransfers(ctx context.Context, r *otokUSDTReser
 	}
 }
 
+// otokTransferInWindow 报告转账的区块时间是否落在订单可匹配的窗口
+// [下单时间 + otokUSDTMinPayDelay, 保留期结束] 内。
 func otokTransferInWindow(t otokchain.Transfer, r *otokUSDTReservation) bool {
 	if t.BlockTime.IsZero() {
 		return false
 	}
-	return !t.BlockTime.Before(r.CreatedAt.Add(-otokUSDTMatchSlack)) && !t.BlockTime.After(r.ReservedUntil)
+	return !t.BlockTime.Before(r.CreatedAt.Add(otokUSDTMinPayDelay)) && !t.BlockTime.After(r.ReservedUntil)
+}
+
+// otokTransferAutoMatchable 报告一条已记录的转账能否自动（监听 / 用户提交）绑定到预留：
+// 金额精确相等、区块时间在窗口内，且在下单之后才首次被记录。
+func otokTransferAutoMatchable(row *otokUSDTTransfer, r *otokUSDTReservation) bool {
+	if row.OrderID.Valid || row.Status != otokTransferSeen || !row.BlockTime.Valid {
+		return false
+	}
+	if row.Network != r.Network || row.ToAddressNorm != r.ToAddressNorm || row.CreatedAt.Before(r.CreatedAt) {
+		return false
+	}
+	if cents, exact := row.AmountCents(); !exact || cents != r.AmountCents {
+		return false
+	}
+	return otokTransferInWindow(otokchain.Transfer{BlockTime: row.BlockTime.Time}, r)
 }
 
 func otokChainLookupError(err error) error {
@@ -477,7 +533,9 @@ func otokChainLookupError(err error) error {
 	return infraerrors.ServiceUnavailable("USDT_CHAIN_UNAVAILABLE", "blockchain query failed, please retry later")
 }
 
-// SubmitUserTx 用户提交交易哈希加速确认：只接受金额精确等于本单的转账，其余转人工审核。
+// SubmitUserTx 用户提交交易哈希加速确认：只接受金额精确等于本单、且在订单时间窗口内的转账。
+// 不符合条件时只记审计日志，不改动转账状态——用户可以提交任意交易哈希，
+// 不能借此把别人的待匹配转账改成待审核来阻止其自动到账。
 func (s *OtokUSDTService) SubmitUserTx(ctx context.Context, userID, orderID int64, txHash string) (*OtokUSDTOrderDetail, error) {
 	order, err := s.paymentSvc.GetOrder(ctx, orderID, userID)
 	if err != nil {
@@ -497,19 +555,20 @@ func (s *OtokUSDTService) SubmitUserTx(ctx context.Context, userID, orderID int6
 	if err != nil {
 		return nil, infraerrors.BadRequest("USDT_TX_INVALID", err.Error())
 	}
+	operator := fmt.Sprintf("user:%d", userID)
 	if existing, err := otokGetTransferByOrder(ctx, s.entClient, order.ID); err != nil {
 		return nil, err
 	} else if existing != nil {
 		if existing.TxHash != norm {
 			return nil, infraerrors.Conflict("USDT_ORDER_ALREADY_MATCHED", "this order is already matched with another transaction")
 		}
-		_, _ = s.creditBoundTransfer(ctx, existing, fmt.Sprintf("user:%d", userID))
+		_, _ = s.creditBoundTransfer(ctx, existing, operator)
 		return s.orderDetail(ctx, order, r)
 	}
 	if !otokOrderMatchable(order.Status) {
 		return nil, infraerrors.BadRequest("USDT_ORDER_NOT_PAYABLE", "order is not awaiting payment")
 	}
-	if time.Now().After(r.ReservedUntil) {
+	if time.Now().After(r.ReservedUntil.Add(otokUSDTReleaseMargin)) {
 		return nil, infraerrors.BadRequest("USDT_ORDER_WINDOW_CLOSED", "the automatic confirmation window has closed; please contact support")
 	}
 	transfers, check, err := s.fetchTxTransfers(ctx, r, norm)
@@ -523,35 +582,38 @@ func (s *OtokUSDTService) SubmitUserTx(ctx context.Context, userID, orderID int6
 		return nil, infraerrors.BadRequest("USDT_TX_WRONG_RECIPIENT", "this transaction is not a USDT transfer to the order's receiving address")
 	}
 	var matched *otokUSDTTransfer
-	var mismatchNotes []string
+	var rejected []string
+	usedByOther := false
 	for _, tr := range transfers {
 		row, err := otokUpsertTransfer(ctx, s.entClient, tr, r.TokenContract, r.Decimals, otokSourceUser)
 		if err != nil {
 			return nil, err
 		}
-		if row.OrderID.Valid && row.OrderID.Int64 != order.ID {
-			return nil, infraerrors.Conflict("USDT_TX_ALREADY_USED", "this transaction has already been used by another order")
-		}
-		cents, exact := otokchain.RawToCents(tr.Amount, r.Decimals)
-		if exact && cents == r.AmountCents && otokTransferInWindow(tr, r) && matched == nil {
-			matched = row
+		if row.OrderID.Valid {
+			usedByOther = true
 			continue
 		}
-		note := fmt.Sprintf("user %d submitted for order %d: amount %s vs expected %s", userID, order.ID,
-			otokchain.FormatRaw(tr.Amount, r.Decimals), otokchain.FormatCents(r.AmountCents))
-		if !otokTransferInWindow(tr, r) {
-			note += " (outside time window)"
+		if otokTransferAutoMatchable(row, r) {
+			if matched == nil {
+				matched = row
+			}
+			continue
 		}
-		mismatchNotes = append(mismatchNotes, note)
-		if row.Status == otokTransferSeen && !row.OrderID.Valid {
-			_ = otokSetTransferStatus(ctx, s.entClient, row.ID, otokTransferReview, note, false)
-		}
+		rejected = append(rejected, fmt.Sprintf("log %d: amount %s (expected %s), status %s, block time %s",
+			row.LogIndex, otokchain.FormatRaw(row.AmountRaw, row.Decimals), otokchain.FormatCents(r.AmountCents),
+			row.Status, tr.BlockTime.Format(time.RFC3339)))
 	}
 	if matched == nil {
-		slog.Info("[OtokUSDT] user submitted tx did not match order", "order", order.ID, "tx", norm, "notes", mismatchNotes)
-		return nil, infraerrors.BadRequest("USDT_TX_AMOUNT_MISMATCH", "the transferred amount or time does not match this order; it has been sent for manual review")
+		slog.Info("[OtokUSDT] user submitted tx did not match order", "order", order.ID, "tx", norm, "rejected", rejected)
+		s.paymentSvc.writeAuditLog(ctx, order.ID, "OTOK_USDT_TX_REJECTED", operator, map[string]any{
+			"network": string(r.Network), "txHash": norm, "usedByOtherOrder": usedByOther, "rejected": rejected,
+		})
+		if usedByOther && len(rejected) == 0 {
+			return nil, infraerrors.Conflict("USDT_TX_ALREADY_USED", "this transaction has already been used by another order")
+		}
+		return nil, infraerrors.BadRequest("USDT_TX_AMOUNT_MISMATCH", "the transferred amount or time does not match this order; please contact support")
 	}
-	ok, err := s.bindTransfer(ctx, matched.ID, order.ID, fmt.Sprintf("submitted by user %d", userID))
+	ok, err := s.bindTransfer(ctx, matched.ID, order.ID, "submitted by user "+strconv.FormatInt(userID, 10), false)
 	if err != nil {
 		return nil, err
 	}
@@ -559,7 +621,7 @@ func (s *OtokUSDTService) SubmitUserTx(ctx context.Context, userID, orderID int6
 		return nil, infraerrors.Conflict("USDT_TX_ALREADY_USED", "this transaction has already been used by another order")
 	}
 	if bound, err := otokGetTransfer(ctx, s.entClient, matched.ID); err == nil && bound != nil {
-		if _, err := s.creditBoundTransfer(ctx, bound, fmt.Sprintf("user:%d", userID)); err != nil {
+		if _, err := s.creditBoundTransfer(ctx, bound, operator); err != nil {
 			slog.Warn("[OtokUSDT] credit after user submission failed", "order", order.ID, "error", err)
 		}
 	}
@@ -646,7 +708,7 @@ func (s *OtokUSDTService) AdminBindTx(ctx context.Context, orderID int64, txHash
 				return nil, err
 			}
 		}
-		ok, err := s.bindTransfer(ctx, row.ID, order.ID, "admin: "+reason)
+		ok, err := s.bindTransfer(ctx, row.ID, order.ID, "admin: "+reason, true)
 		if err != nil {
 			return nil, err
 		}

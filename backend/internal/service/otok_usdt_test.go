@@ -6,6 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"math"
+	"math/big"
 	"strconv"
 	"testing"
 	"time"
@@ -57,6 +59,10 @@ func TestOtokUSDTQuoteCents(t *testing.T) {
 	require.Error(t, err)
 	_, err = otokUSDTQuoteCents(0, decimal.Zero, rate)
 	require.Error(t, err)
+	_, err = otokUSDTQuoteCents(math.NaN(), decimal.Zero, rate)
+	require.Error(t, err)
+	_, err = otokUSDTQuoteCents(math.Inf(1), decimal.Zero, rate)
+	require.Error(t, err)
 }
 
 func TestOtokUSDTStationAmountForSubscription(t *testing.T) {
@@ -68,21 +74,23 @@ func TestOtokUSDTStationAmountForSubscription(t *testing.T) {
 }
 
 func TestOtokPickFreeAmountCents(t *testing.T) {
+	// 基础金额本身（+0.00）永远不分配。
 	got, ok := otokPickFreeAmountCents(1409, nil)
 	require.True(t, ok)
-	require.EqualValues(t, 1409, got)
+	require.EqualValues(t, 1410, got)
 
-	taken := map[int64]bool{1409: true, 1410: true, 1412: true}
+	taken := map[int64]bool{1410: true, 1411: true, 1413: true}
 	got, ok = otokPickFreeAmountCents(1409, taken)
 	require.True(t, ok)
-	require.EqualValues(t, 1411, got)
+	require.EqualValues(t, 1412, got)
 
 	full := map[int64]bool{}
-	for i := int64(0); i < otokUSDTAmountSlots; i++ {
+	for i := int64(1); i <= otokUSDTAmountSlots; i++ {
 		full[1409+i] = true
 	}
 	_, ok = otokPickFreeAmountCents(1409, full)
 	require.False(t, ok)
+	require.EqualValues(t, 99, otokUSDTAmountSlots)
 }
 
 func TestOtokForcedProviderKey(t *testing.T) {
@@ -108,16 +116,87 @@ func TestOtokUSDTSensitiveFieldsCoveredByAudit(t *testing.T) {
 	require.True(t, isAuditSensitiveBodyKey(provider.OtokUSDTConfigTronGridAPIKey))
 	require.True(t, validProviderKeys[payment.TypeOtokUSDT])
 	require.True(t, isSensitiveProviderConfigField(payment.TypeOtokUSDT, provider.OtokUSDTConfigTronGridAPIKey))
+	// RPC 地址可能在路径里带 key，审计日志要脱敏。
+	for _, k := range []string{provider.OtokUSDTConfigETHRPCURL, provider.OtokUSDTConfigBSCRPCURL, provider.OtokUSDTConfigPolygonRPCURL} {
+		require.True(t, isAuditSensitiveBodyKey(k), k)
+	}
+	require.False(t, isAuditSensitiveBodyKey(provider.OtokUSDTConfigTRC20Address))
 }
 
 func TestOtokTransferInWindow(t *testing.T) {
 	created := time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC)
 	r := &otokUSDTReservation{CreatedAt: created, ReservedUntil: created.Add(90 * time.Minute)}
 	require.True(t, otokTransferInWindow(otokchain.Transfer{BlockTime: created.Add(5 * time.Minute)}, r))
-	require.True(t, otokTransferInWindow(otokchain.Transfer{BlockTime: created.Add(-30 * time.Second)}, r))
-	require.False(t, otokTransferInWindow(otokchain.Transfer{BlockTime: created.Add(-5 * time.Minute)}, r))
+	require.True(t, otokTransferInWindow(otokchain.Transfer{BlockTime: created.Add(otokUSDTMinPayDelay)}, r))
+	require.True(t, otokTransferInWindow(otokchain.Transfer{BlockTime: created.Add(90 * time.Minute)}, r))
+	// 早于下单（或下单后几秒内）的转账不属于这张订单。
+	require.False(t, otokTransferInWindow(otokchain.Transfer{BlockTime: created.Add(5 * time.Second)}, r))
+	require.False(t, otokTransferInWindow(otokchain.Transfer{BlockTime: created.Add(-30 * time.Second)}, r))
 	require.False(t, otokTransferInWindow(otokchain.Transfer{BlockTime: created.Add(91 * time.Minute)}, r))
 	require.False(t, otokTransferInWindow(otokchain.Transfer{}, r))
+}
+
+func TestOtokTransferAutoMatchable(t *testing.T) {
+	created := time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC)
+	r := &otokUSDTReservation{
+		Network: otokchain.NetworkBEP20, ToAddressNorm: "0xabc", AmountCents: 1410,
+		CreatedAt: created, ReservedUntil: created.Add(90 * time.Minute),
+	}
+	good := func() *otokUSDTTransfer {
+		return &otokUSDTTransfer{
+			Network: otokchain.NetworkBEP20, ToAddressNorm: "0xabc", Status: otokTransferSeen,
+			AmountRaw: otokchain.CentsToRaw(1410, 18), Decimals: 18,
+			BlockTime: sql.NullTime{Time: created.Add(3 * time.Minute), Valid: true},
+			CreatedAt: created.Add(4 * time.Minute),
+		}
+	}
+	require.True(t, otokTransferAutoMatchable(good(), r))
+
+	cases := map[string]func(*otokUSDTTransfer){
+		"already bound":  func(t *otokUSDTTransfer) { t.OrderID = sql.NullInt64{Int64: 9, Valid: true} },
+		"in review":      func(t *otokUSDTTransfer) { t.Status = otokTransferReview },
+		"dropped":        func(t *otokUSDTTransfer) { t.Status = otokTransferDropped },
+		"other network":  func(t *otokUSDTTransfer) { t.Network = otokchain.NetworkPolygon },
+		"other address":  func(t *otokUSDTTransfer) { t.ToAddressNorm = "0xdef" },
+		"amount differs": func(t *otokUSDTTransfer) { t.AmountRaw = otokchain.CentsToRaw(1409, 18) },
+		"sub-cent amount": func(t *otokUSDTTransfer) {
+			t.AmountRaw = new(big.Int).Add(otokchain.CentsToRaw(1410, 18), big.NewInt(1))
+		},
+		"no block time":      func(t *otokUSDTTransfer) { t.BlockTime = sql.NullTime{} },
+		"paid before order":  func(t *otokUSDTTransfer) { t.BlockTime.Time = created.Add(-time.Minute) },
+		"seen before order":  func(t *otokUSDTTransfer) { t.CreatedAt = created.Add(-time.Second) },
+		"paid after closing": func(t *otokUSDTTransfer) { t.BlockTime.Time = created.Add(91 * time.Minute) },
+	}
+	for name, mutate := range cases {
+		row := good()
+		mutate(row)
+		require.False(t, otokTransferAutoMatchable(row, r), name)
+	}
+}
+
+func TestOtokBoundTransferMismatch(t *testing.T) {
+	r := &otokUSDTReservation{Network: otokchain.NetworkTRC20, ToAddressNorm: otokTestTronAddress, AmountCents: 1410}
+	row := &otokUSDTTransfer{
+		Network: otokchain.NetworkTRC20, ToAddressNorm: otokTestTronAddress,
+		AmountRaw: otokchain.CentsToRaw(1410, 6), Decimals: 6,
+	}
+	require.Empty(t, otokBoundTransferMismatch(row, r))
+
+	row.AmountRaw = otokchain.CentsToRaw(1000, 6)
+	require.Contains(t, otokBoundTransferMismatch(row, r), "does not match order amount")
+	// 管理员补单允许金额不一致，但网络 / 地址必须一致。
+	row.AmountOverride = true
+	require.Empty(t, otokBoundTransferMismatch(row, r))
+	row.Network = otokchain.NetworkBEP20
+	require.NotEmpty(t, otokBoundTransferMismatch(row, r))
+}
+
+func TestOtokOrderMatchable(t *testing.T) {
+	require.True(t, otokOrderMatchable(OrderStatusPending))
+	require.True(t, otokOrderMatchable(OrderStatusExpired))
+	require.False(t, otokOrderMatchable(OrderStatusCancelled))
+	require.False(t, otokOrderMatchable(OrderStatusFailed))
+	require.False(t, otokOrderMatchable(OrderStatusPaid))
 }
 
 func otokTestConfigJSON(t *testing.T, extra map[string]string) string {

@@ -219,8 +219,33 @@ func TestEVMScanTransfersHalvesChunkOnError(t *testing.T) {
 	res, err := c.ScanTransfers(context.Background(), 1, 1000, []string{testRecipient}, 2000, 10)
 	require.NoError(t, err)
 	require.EqualValues(t, 1000, res.ScannedTo)
-	require.LessOrEqual(t, res.NextChunk, int64(750))
+	require.LessOrEqual(t, res.NextChunk, int64(751))
 	require.Greater(t, calls.Load(), int32(2))
+}
+
+func TestEVMScanTransfersShrinksToSingleBlock(t *testing.T) {
+	spec, err := SpecFor(NetworkPolygon)
+	require.NoError(t, err)
+	srv := newRPCServer(t, func(call rpcCall) (any, *rpcError) {
+		var filter struct {
+			FromBlock string `json:"fromBlock"`
+			ToBlock   string `json:"toBlock"`
+		}
+		require.NoError(t, json.Unmarshal(call.Params[0], &filter))
+		from, _ := parseHexInt(filter.FromBlock)
+		to, _ := parseHexInt(filter.ToBlock)
+		if to > from {
+			return nil, &rpcError{Code: -32005, Message: "query returned more than 10000 results"}
+		}
+		return []any{}, nil
+	})
+	defer srv.Close()
+
+	c, err := NewEVMClient(spec, srv.URL, srv.Client())
+	require.NoError(t, err)
+	res, err := c.ScanTransfers(context.Background(), 1, 3, []string{testRecipient}, 8, 20)
+	require.NoError(t, err)
+	require.EqualValues(t, 3, res.ScannedTo)
 }
 
 func TestEVMEnsureChainIDMismatch(t *testing.T) {
@@ -308,8 +333,9 @@ func TestTronIncomingTransfers(t *testing.T) {
 
 	c, err := NewTronClient(spec, srv.URL, "secret-key", srv.Client())
 	require.NoError(t, err)
-	transfers, maxTs, err := c.IncomingTransfers(context.Background(), recipient, 1, 3)
+	transfers, maxTs, more, err := c.IncomingTransfers(context.Background(), recipient, 1, 3)
 	require.NoError(t, err)
+	require.False(t, more)
 	require.Equal(t, "secret-key", gotKey)
 	require.Len(t, transfers, 2)
 	require.EqualValues(t, 1_700_000_000_000, maxTs)
@@ -322,6 +348,40 @@ func TestTronIncomingTransfers(t *testing.T) {
 		}
 	}
 	require.Equal(t, time.UnixMilli(1_700_000_000_000).UTC(), transfers[0].BlockTime)
+}
+
+func TestTronIncomingTransfersReportsTruncation(t *testing.T) {
+	spec, err := SpecFor(NetworkTRC20)
+	require.NoError(t, err)
+	recipient, err := TronAddressFromHex(strings.Repeat("2", 40))
+	require.NoError(t, err)
+	var pages atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := pages.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": []any{map[string]any{
+				"transaction_id":  strings.Repeat(string(rune('a'+n)), 64),
+				"token_info":      map[string]any{"address": spec.TokenContract, "decimals": 6},
+				"block_timestamp": 1_700_000_000_000 + int64(n),
+				"from":            "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+				"to":              recipient,
+				"type":            "Transfer",
+				"value":           "1000000",
+			}},
+			"meta": map[string]any{"fingerprint": "next"},
+		})
+	}))
+	defer srv.Close()
+
+	c, err := NewTronClient(spec, srv.URL, "", srv.Client())
+	require.NoError(t, err)
+	transfers, maxTs, more, err := c.IncomingTransfers(context.Background(), recipient, 1, 2)
+	require.NoError(t, err)
+	require.True(t, more)
+	require.Len(t, transfers, 2)
+	require.EqualValues(t, 1_700_000_000_002, maxTs)
+	require.EqualValues(t, 2, pages.Load())
 }
 
 func TestTronTransactionParsesLogs(t *testing.T) {
