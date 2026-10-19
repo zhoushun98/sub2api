@@ -3,7 +3,10 @@
  * 上游文件只通过展开 / 调用本文件的导出接入，见 docs/otok/UPSTREAM_PATCHES.md。
  */
 import type { ConfigFieldDef } from '@/components/payment/providerConfig'
-import usdtIcon from '@/assets/icons/usdt.svg'
+import bnbIcon from '@/assets/icons/otok/bnb.svg'
+import ethIcon from '@/assets/icons/otok/eth.svg'
+import polygonIcon from '@/assets/icons/otok/polygon.svg'
+import tronIcon from '@/assets/icons/otok/tron.svg'
 
 export const OTOK_USDT_PROVIDER_KEY = 'otok_usdt'
 
@@ -61,7 +64,10 @@ export function formatUsdt(amount: number | string): string {
   return n.toFixed(2)
 }
 
-/** 合并进上游 PaymentMethodSelector 的 METHOD_ICONS。 */
-export const OTOK_METHOD_ICONS: Record<string, string> = Object.fromEntries(
-  OTOK_USDT_PAYMENT_TYPES.map((type) => [type, usdtIcon]),
-)
+/** 各网络使用所在链的图标；合并进上游 PaymentMethodSelector 的 METHOD_ICONS。 */
+export const OTOK_METHOD_ICONS: Record<OtokUsdtPaymentType, string> = {
+  otok_usdt_trc20: tronIcon,
+  otok_usdt_bep20: bnbIcon,
+  otok_usdt_polygon: polygonIcon,
+  otok_usdt_erc20: ethIcon,
+}

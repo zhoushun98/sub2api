@@ -63,7 +63,10 @@
     <template v-else>
       <div class="card p-6">
         <div class="flex flex-col items-center space-y-4">
-          <p class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('otok.usdt.title', { network: networkName }) }}</p>
+          <p class="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+            <img v-if="networkIcon" :src="networkIcon" alt="" class="h-6 w-6" />
+            {{ t('otok.usdt.title', { network: networkName }) }}
+          </p>
           <div
             data-test="otok-usdt-warning"
             class="w-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"
@@ -160,6 +163,7 @@ import { otokUsdtAPI, type OtokUsdtOrderDetail } from '@/api/otok/usdt'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { formatOrderDateTime } from '@/components/payment/orderUtils'
 import type { PaymentOrder } from '@/types/payment'
+import { OTOK_METHOD_ICONS, isOtokUsdtPaymentType } from '@/otok/payment'
 
 const props = defineProps<{
   orderId: number
@@ -198,6 +202,11 @@ const networkName = computed(() => {
   const network = detail.value?.network || ''
   const key = `otok.usdt.networks.${network}`
   return te(key) ? t(key) : (detail.value?.network_name || network)
+})
+
+const networkIcon = computed(() => {
+  const type = detail.value?.payment_type || props.paymentType
+  return isOtokUsdtPaymentType(type) ? OTOK_METHOD_ICONS[type] : ''
 })
 
 const expiresAtMs = computed(() => new Date(detail.value?.expires_at || props.expiresAt || 0).getTime())

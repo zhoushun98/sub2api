@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PROVIDER_CONFIG_FIELDS, PROVIDER_SUPPORTED_TYPES } from '@/components/payment/providerConfig'
-import { OTOK_USDT_PAYMENT_TYPES, isOtokUsdtPaymentType, otokEstimateUsdt } from '../payment'
+import { OTOK_METHOD_ICONS, OTOK_USDT_PAYMENT_TYPES, isOtokUsdtPaymentType, otokEstimateUsdt } from '../payment'
 import { otokMergeLocale } from '../i18nMerge'
 
 describe('otok payment helpers', () => {
@@ -44,5 +44,13 @@ describe('otokMergeLocale', () => {
       otok: { a: 'b' },
     })
     expect(base.payment.methods).toEqual({ alipay: '支付宝' })
+  })
+})
+
+describe('OTOK_METHOD_ICONS', () => {
+  it('每个网络都有独立的链图标', () => {
+    const icons = OTOK_USDT_PAYMENT_TYPES.map((type) => OTOK_METHOD_ICONS[type])
+    expect(icons.every(Boolean)).toBe(true)
+    expect(new Set(icons).size).toBe(OTOK_USDT_PAYMENT_TYPES.length)
   })
 })
