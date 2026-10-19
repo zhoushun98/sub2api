@@ -40,7 +40,7 @@
 | `frontend/src/components/payment/providerConfig.ts` | 文件头 import | `import { OTOK_PROVIDER_CONFIG_FIELDS, OTOK_PROVIDER_SUPPORTED_TYPES } from '@/otok/payment'` | — |
 | 同上 | `PROVIDER_SUPPORTED_TYPES` 末尾 | `...OTOK_PROVIDER_SUPPORTED_TYPES` | 后台服务商对话框可选 USDT 网络 |
 | 同上 | `PROVIDER_CONFIG_FIELDS` 末尾 | `...OTOK_PROVIDER_CONFIG_FIELDS` | USDT 配置字段 |
-| `frontend/src/components/payment/PaymentMethodSelector.vue` | import 与 `METHOD_ICONS` 末尾 | `...OTOK_METHOD_ICONS` | USDT 图标 |
+| `frontend/src/components/payment/PaymentMethodSelector.vue` | import 与 `METHOD_ICONS` 末尾 | `...OTOK_METHOD_ICONS` | 各网络显示所在链的图标（TRON / BNB / POL / ETH），文件在 `src/assets/icons/otok/` |
 | `frontend/src/components/payment/ProviderCard.vue` | `PROVIDER_KEY_LABELS` 末尾 | `otok_usdt: 'admin.settings.payment.providerOtokUsdt'` | 服务商卡片名称 |
 | `frontend/src/views/admin/SettingsView.vue` | `allPaymentTypes` 末尾 | `{ value: "otok_usdt", ... }` | 「启用的服务商」开关 |
 | 同上 | `providerKeyOptions` 末尾 | `{ value: "otok_usdt", ... }` | 新建服务商时可选 |
