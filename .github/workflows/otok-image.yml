@@ -1,0 +1,151 @@
+# otok: fork 定制版镜像构建，推送到 GHCR（ghcr.io/zhoushun98/sub2api）。
+#
+# - push 到 otok 分支：只构建 amd64，镜像 tag 为 `otok`、`<VERSION>-otok.dev.<sha7>`、`sha-<sha7>`
+# - push tag `otok-v<上游版本>.<N>`（如 otok-v0.2.17.1）：构建 amd64 + arm64，
+#   镜像 tag 为 `<上游版本>-otok.<N>`（如 0.2.17-otok.1）、`latest`、`sha-<sha7>`
+# - 也可在 Actions 页面手动触发
+#
+# tag 故意不用 `v*` 开头，避免触发上游的 release.yml（fork 上该 workflow 已 disable）。
+name: otok image
+
+on:
+  push:
+    branches: [otok]
+    tags: ['otok-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: otok-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/zhoushun98/sub2api
+
+jobs:
+  test:
+    if: github.repository == 'zhoushun98/sub2api'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Go 单元测试
+        working-directory: backend
+        run: go test -tags=unit ./...
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: 前端类型检查与测试
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run typecheck
+          pnpm run test:run
+
+  image:
+    if: github.repository == 'zhoushun98/sub2api'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 解析版本号
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$(tr -d '[:space:]' < backend/cmd/server/VERSION)"
+          sha7="${GITHUB_SHA::7}"
+          if [[ "${GITHUB_REF}" == refs/tags/otok-v* ]]; then
+            tag="${GITHUB_REF#refs/tags/otok-v}"
+            if [[ ! "${tag}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::tag 格式应为 otok-v<上游版本>.<N>，例如 otok-v0.2.17.1"
+              exit 1
+            fi
+            upstream="${tag%.*}"
+            n="${tag##*.}"
+            if [[ "${upstream}" != "${base}" ]]; then
+              echo "::error::tag 中的上游版本 ${upstream} 与 backend/cmd/server/VERSION（${base}）不一致"
+              exit 1
+            fi
+            version="${upstream}-otok.${n}"
+            platforms="linux/amd64,linux/arm64"
+            release=true
+          else
+            version="${base}-otok.dev.${sha7}"
+            platforms="linux/amd64"
+            release=false
+          fi
+          {
+            echo "version=${version}"
+            echo "platforms=${platforms}"
+            echo "release=${release}"
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "${GITHUB_OUTPUT}"
+          echo "构建版本：${version}（${platforms}）"
+
+      - name: Set up QEMU
+        if: steps.ver.outputs.release == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像 tag 与 label
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.ver.outputs.version }}
+            type=raw,value=latest,enable=${{ steps.ver.outputs.release == 'true' }}
+            type=raw,value=otok,enable=${{ github.ref == 'refs/heads/otok' }}
+            type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.title=sub2api-otok
+            org.opencontainers.image.description=Sub2API（otok 定制版，含 USDT 链上充值）
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.ver.outputs.version }}
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: ${{ steps.ver.outputs.platforms }}
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.ver.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.ver.outputs.date }}
+            GOPROXY=https://proxy.golang.org,direct
+            GOSUMDB=sum.golang.org
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
