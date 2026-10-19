@@ -191,6 +191,9 @@ func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req C
 			return nil, err
 		}
 	}
+	if err := s.otokValidateProviderInstance(ctx, 0, req.ProviderKey, typesStr, req.Config, req.Enabled); err != nil { // otok: USDT 实例约束
+		return nil, err
+	}
 	if err := s.validateVisibleMethodEnablementConflicts(ctx, 0, req.ProviderKey, typesStr, req.Enabled); err != nil {
 		return nil, err
 	}
@@ -358,6 +361,9 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 		if err := validateEasyPayCustomMethods(configToValidate, nextSupportedTypes); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.otokValidateProviderInstance(ctx, id, current.ProviderKey, nextSupportedTypes, configToValidate, nextEnabled); err != nil { // otok: USDT 实例约束
+		return nil, err
 	}
 	// Validate merged config when the instance will end up enabled.
 	// This surfaces provider-level errors (e.g. wxpay missing certSerial) at save time,

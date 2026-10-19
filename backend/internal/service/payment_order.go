@@ -109,6 +109,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if err != nil {
 		return nil, err
 	}
+	payAmountStr, payAmount = otokCreateOrderPayAmount(order, sel, payAmountStr, payAmount) // otok: USDT 唯一金额
 	resp, err := s.invokeProvider(ctx, order, req, cfg, limitAmount, payAmountStr, payAmount, plan, sel)
 	if err != nil {
 		_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).
@@ -223,6 +224,9 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	order, err := b.Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create order: %w", err)
+	}
+	if order, err = s.otokPrepareUSDTOrderInTx(ctx, tx, order, req, plan, cfg, limitAmount, sel); err != nil { // otok: USDT 报价与唯一金额预留
+		return nil, err
 	}
 	code := fmt.Sprintf("PAY-%d-%d", order.ID, time.Now().UnixNano()%100000)
 	order, err = tx.PaymentOrder.UpdateOneID(order.ID).SetRechargeCode(code).Save(ctx)
@@ -362,7 +366,7 @@ func (s *PaymentService) selectCreateOrderInstance(ctx context.Context, req Crea
 	if err != nil {
 		return nil, err
 	}
-	sel, err := s.loadBalancer.SelectInstance(selectCtx, "", req.PaymentType, payment.Strategy(cfg.LoadBalanceStrategy), payAmount)
+	sel, err := s.loadBalancer.SelectInstance(selectCtx, otokForcedProviderKey(req.PaymentType), req.PaymentType, payment.Strategy(cfg.LoadBalanceStrategy), payAmount) // otok: USDT 只选 otok_usdt 实例
 	if err != nil {
 		return nil, infraerrors.ServiceUnavailable("PAYMENT_GATEWAY_ERROR", "method_not_configured").
 			WithMetadata(map[string]string{"payment_type": req.PaymentType})
