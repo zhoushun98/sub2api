@@ -94,4 +94,15 @@ describe('OtokMonitorCard', () => {
     expect(buttons.every((b) => b.attributes('data-testid') === 'otok-monitor-bar')).toBe(true)
     expect(wrapper.text()).not.toMatch(/降智|quality/i)
   })
+
+  it('启用降智检测时显示按钮并发出 pelican 事件，未启用时不渲染', async () => {
+    const off = mount(OtokMonitorCardView, { props: { card: card(), countdownSeconds: 10 } })
+    expect(off.find('[data-testid="otok-monitor-pelican"]').exists()).toBe(false)
+
+    const on = mount(OtokMonitorCardView, { props: { card: card(), countdownSeconds: 10, pelicanEnabled: true } })
+    const btn = on.find('[data-testid="otok-monitor-pelican"]')
+    expect(btn.text()).toBe('otok.pelican.button')
+    await btn.trigger('click')
+    expect(on.emitted('pelican')).toHaveLength(1)
+  })
 })

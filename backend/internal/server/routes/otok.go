@@ -66,6 +66,9 @@ func RegisterOtokRoutes(
 	if h == nil {
 		return
 	}
+	if h.Pelican != nil {
+		registerOtokPelicanRoutes(v1, h.Pelican, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
+	}
 	if h.USDT != nil {
 		submitLimiter := ratelimit.NewRateLimiter(redisClient)
 		user := v1.Group("/payment/otok/usdt")
@@ -129,5 +132,42 @@ func registerOtokContactRoutes(
 	{
 		adminGroup.GET("", contact.AdminGet)
 		adminGroup.PUT("", middleware.RequestBodyLimit(otokContactMaxBodyBytes), contact.AdminUpdate)
+	}
+}
+
+// otokPelicanMaxBodyBytes 容纳 8000 字 prompt 与分组列表。
+const otokPelicanMaxBodyBytes = 128 << 10
+
+// registerOtokPelicanRoutes 注册「降智检测」（鹈鹕测试）接口，中间件与「联系我们」一致。
+func registerOtokPelicanRoutes(
+	v1 *gin.RouterGroup,
+	h *handler.OtokPelicanHandler,
+	jwtAuth middleware.JWTAuthMiddleware,
+	adminAuth middleware.AdminAuthMiddleware,
+	auditLog middleware.AuditLogMiddleware,
+	settingService *service.SettingService,
+	panelRateLimiter *middleware.PanelRateLimiter,
+) {
+	user := v1.Group("/otok/pelican")
+	user.Use(gin.HandlerFunc(jwtAuth))
+	user.Use(middleware.BackendModeUserGuard(settingService))
+	user.Use(panelRateLimiter.Global())
+	{
+		user.GET("/groups", h.Groups)
+		user.GET("/groups/:id/rounds", h.Rounds)
+		user.GET("/runs/:id", h.Run)
+	}
+
+	adminGroup := v1.Group("/admin/otok/pelican")
+	adminGroup.Use(gin.HandlerFunc(adminAuth))
+	adminGroup.Use(gin.HandlerFunc(auditLog))
+	adminGroup.Use(middleware.AdminComplianceGuard(settingService))
+	{
+		adminGroup.GET("/config", h.AdminGetConfig)
+		adminGroup.PUT("/config", middleware.RequestBodyLimit(otokPelicanMaxBodyBytes), h.AdminUpdateConfig)
+		adminGroup.GET("/status", h.AdminStatus)
+		adminGroup.POST("/run-now", middleware.RequestBodyLimit(otokPelicanMaxBodyBytes), h.AdminRunNow)
+		adminGroup.GET("/groups/:id/rounds", h.AdminRounds)
+		adminGroup.GET("/runs/:id", h.AdminRun)
 	}
 }

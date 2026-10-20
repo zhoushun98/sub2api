@@ -101,9 +101,10 @@ func (h *OtokUSDTHandler) SubmitTx(c *gin.Context) {
 type OtokHandlers struct {
 	USDT      *OtokUSDTHandler
 	AdminUSDT *admin.OtokUSDTHandler
+	Pelican   *OtokPelicanHandler
 }
 
 // ProvideOtokHandlers 创建 OtokHandlers。
-func ProvideOtokHandlers(usdt *OtokUSDTHandler, adminUSDT *admin.OtokUSDTHandler) *OtokHandlers {
-	return &OtokHandlers{USDT: usdt, AdminUSDT: adminUSDT}
+func ProvideOtokHandlers(usdt *OtokUSDTHandler, adminUSDT *admin.OtokUSDTHandler, pelican *OtokPelicanHandler) *OtokHandlers {
+	return &OtokHandlers{USDT: usdt, AdminUSDT: adminUSDT, Pelican: pelican}
 }

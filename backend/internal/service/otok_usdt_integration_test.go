@@ -37,6 +37,7 @@ import (
 var (
 	otokPGOnce   sync.Once
 	otokPGClient *dbent.Client
+	otokPGDB     *sql.DB
 	otokPGErr    error
 	otokOrderSeq atomic.Int64
 )
@@ -67,6 +68,7 @@ func otokIntegrationClient(t *testing.T) *dbent.Client {
 		}
 		// 与生产一样限制连接池，避免并发用例超过 PostgreSQL 默认的 100 连接上限。
 		db.SetMaxOpenConns(20)
+		otokPGDB = db
 		otokPGClient = enttest.NewClient(t, enttest.WithOptions(dbent.Driver(entsql.OpenDB(dialect.Postgres, db))))
 		otokPGErr = otokApplyMigration(ctx, otokPGClient)
 	})
@@ -83,7 +85,7 @@ func otokIntegrationClient(t *testing.T) *dbent.Client {
 }
 
 func otokApplyMigration(ctx context.Context, client *dbent.Client) error {
-	for _, name := range []string{"otok_0001_usdt.sql", "otok_0002_usdt_hardening.sql"} {
+	for _, name := range []string{"otok_0001_usdt.sql", "otok_0002_usdt_hardening.sql", "otok_0003_pelican.sql"} {
 		raw, err := migrations.FS.ReadFile(name)
 		if err != nil {
 			return err

@@ -21,11 +21,12 @@
 | `backend/internal/handler/handler.go` | `Handlers` 结构体末尾 | `Otok *OtokHandlers` | 挂载 fork handler |
 | `backend/internal/handler/wire.go` | `ProvideSystemHandler` | `admin.NewSystemHandler(newOtokUpdateGuard(updateService), lockService)` | 禁用在线更新和回滚 |
 | 同上 | `ProvideHandlers` 参数末尾和返回值 | 新增 `otokHandlers *OtokHandlers` 参数与 `Otok: otokHandlers` 字段 | wire 注入 |
-| `backend/internal/server/router.go` | `registerRoutes`，`RegisterPaymentRoutes` 之后 | `routes.RegisterOtokRoutes(...)` | 注册 fork 接口（USDT、联系我们） |
+| `backend/internal/server/router.go` | `registerRoutes`，`RegisterPaymentRoutes` 之后 | `routes.RegisterOtokRoutes(...)` | 注册 fork 接口（USDT、联系我们、降智检测） |
 | `backend/cmd/server/wire.go` | `wire.Build` | 加入 `service.OtokProviderSet`、`handler.OtokProviderSet` | wire 注入 |
 | 同上 | `provideCleanup` 参数末尾 | `otokUSDT *service.OtokUSDTService` | 优雅停机 |
-| 同上 | `provideCleanup` 的并行清理步骤 | `{"OtokUSDTService", ...Stop()}` | 优雅停机 |
-| `backend/cmd/server/wire_gen_test.go` | `provideCleanup` 的按位置调用 | 末尾补一个 `nil, // otokUSDT` | 适配新增参数 |
+| 同上 | `provideCleanup` 参数末尾 | `otokPelican *service.OtokPelicanService` | 降智检测调度优雅停机 |
+| 同上 | `provideCleanup` 的并行清理步骤 | `{"OtokUSDTService", ...Stop()}`、`{"OtokPelicanService", ...Stop()}` | 优雅停机 |
+| `backend/cmd/server/wire_gen_test.go` | `provideCleanup` 的按位置调用 | 末尾补 `nil, // otokUSDT`、`nil, // otokPelican` | 适配新增参数 |
 | `backend/cmd/server/wire_gen.go` | 生成文件 | `cd backend && go generate ./cmd/server` 重新生成 | 不要手改 |
 
 经核验以下上游文件**无需修改**：`payment/types.go`、`load_balancer.go`、`payment_fulfillment.go`、`payment_order_lifecycle.go`、`payment_config_limits.go`、`payment_config_service.go`、`update_service.go`。fork 通过 `init()`（`otok_usdt_register.go`）向上游的以下几张表追加 `otok_usdt` 条目，它们是 map，上游改名或改结构时需要跟着调整：
@@ -60,11 +61,12 @@
 | `frontend/src/views/admin/orders/AdminOrdersView.vue` | 订单详情弹窗「操作日志」之前 | `<OtokUsdtOrderInfo v-if=... />` | 链上信息与手动补单 |
 | 同上 | import | 2 行 otok import | — |
 | 同上 | `paymentTypeFilterOptions` 末尾 | `...OTOK_USDT_PAYMENT_TYPES.map(...)` | 按 USDT 网络筛选订单 |
-| `frontend/src/router/index.ts` | import 与 404 路由之前 | `...otokRoutes` | USDT 到账记录页、联系方式配置页 |
+| `frontend/src/router/index.ts` | import 与 404 路由之前 | `...otokRoutes` | USDT 到账记录页、联系方式配置页、降智检测配置页 |
 | `frontend/src/components/layout/AppSidebar.vue` | 管理端「订单管理」子菜单末尾 | `{ path: '/admin/orders/usdt-transfers', ... }` | 菜单入口 |
 | 同上 | import 区末尾 | `import { OtokContactMenuItem, OtokContactIcon } from '@/otok/sidebar'` | — |
 | 同上 | 管理员「我的账户」区、普通用户区的 `router-link` 循环之后（各 1 行） | `<OtokContactMenuItem />` | 「联系我们」入口，未配置时不渲染 |
 | 同上 | `adminNavItems`，「公告」之后 | `{ path: '/admin/otok/contact', ... }` | 后台「联系方式」配置页入口。不要挪到 security-audit 与 redeem 之间（`integrationSurface.spec.ts` 对那一段做源码切片断言） |
+| 同上 | `adminNavItems`，「渠道管理」children 里「渠道监控」之后 | `{ path: '/admin/otok/pelican', ..., icon: SignalIcon, featureFlag: flagChannelMonitor }` | 后台「降智检测」配置页入口 |
 | `frontend/src/i18n/locales/zh/index.ts`、`en/index.ts` | import 与 `export default` | `export default otokMergeLocale({ ...上游原样... }, otok)`（**改写了 2 行**） | 深合并 fork 文案。上游是浅展开，直接 `...otok` 会整块覆盖 `payment` 等对象 |
 | `frontend/src/views/user/ChannelStatusView.vue` | V2 分支与 import | `<ChannelStatusV2View v-else />` 换成 `<OtokChannelStatusCardsView v-else />`，import 同步替换（**改写了上游 2 行**） | V2 模式下用户侧「渠道状态」改用 otok 卡片页。上游 `ChannelStatusV2View.vue` 本身未改动，还原这 2 行即可恢复 |
 | `frontend/src/views/user/__tests__/ChannelStatusView.mode.spec.ts` | V2 视图的 mock | mock 目标改为 `../otok/OtokChannelStatusCardsView.vue` | 适配上面的钩子 |

@@ -27,4 +27,15 @@ export const otokRoutes: RouteRecordRaw[] = [
       titleKey: 'otok.nav.contactSettings',
     },
   },
+  {
+    path: '/admin/otok/pelican',
+    name: 'OtokAdminPelican',
+    component: () => import('@/views/admin/otok/OtokPelicanSettingsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Pelican Probe',
+      titleKey: 'otok.nav.pelicanSettings',
+    },
+  },
 ]

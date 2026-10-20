@@ -55,6 +55,18 @@
       </div>
     </div>
 
+    <!-- 降智检测（鹈鹕测试）入口：只有启用了的分组才显示 -->
+    <div v-if="pelicanEnabled" class="mt-3 flex justify-end">
+      <button
+        type="button"
+        class="rounded-lg border border-gray-200 bg-white/60 px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:border-primary-300 hover:text-primary-600 dark:border-dark-600 dark:bg-dark-900/40 dark:text-gray-200 dark:hover:border-primary-500/60 dark:hover:text-primary-300"
+        data-testid="otok-monitor-pelican"
+        @click="emit('pelican')"
+      >
+        {{ t('otok.pelican.button') }}
+      </button>
+    </div>
+
     <div class="flex-1"></div>
 
     <OtokMonitorBars :bars="card.bars" :countdown-seconds="countdownSeconds" />
@@ -80,7 +92,10 @@ import OtokMonitorBars from './OtokMonitorBars.vue'
 const props = defineProps<{
   card: OtokMonitorCard
   countdownSeconds: number
+  pelicanEnabled?: boolean
 }>()
+
+const emit = defineEmits<{ (e: 'pelican'): void }>()
 
 const { t } = useI18n()
 const { providerLabel, providerBadgeClass } = useChannelMonitorFormat()

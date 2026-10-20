@@ -6,6 +6,14 @@
 - **渠道状态卡片页**：V2 监控模式下，用户侧「渠道状态」（`/monitor`）改为按厂商分组的卡片页，每个分组一张卡，显示缓存率 / 可用率 / 首 Token 和近 N 个时间段的状态条。数据全部复用上游 V2 被动统计接口，后端无改动。代码在 `frontend/src/otok/monitorCards.ts`、`components/otok/monitor/`、`views/user/otok/`。
 - **联系我们**：侧边栏「联系我们」弹窗，显示微信客服二维码、QQ 交流群（二维码 + 群号）和邮箱。内容在后台「联系方式」页（`/admin/otok/contact`）配置，存在 settings 表的 `otok_contact` 一行（JSON，二维码为 base64），不进 public settings。后端就地构造在 `routes/otok.go`，不经 wire。代码在 `service/otok_contact.go`、`handler/otok_contact_handler.go`、`frontend/src/otok/contact.ts`、`components/otok/contact/`。
 - **上游声明倍率适配 new-api**：上游的「上游声明倍率」探测只认 sub2api 上游（`GET /v1/sub2api/billing`）。返回 404/405 时，fork 改用账号 apikey 调 new-api 的 `GET /api/log/token`，取最近一条消费日志（`type=2`）里的 `group_ratio`，合成为 `sub2api.key_billing` 响应交回原流程；之后的快照、展示、调度和写回都复用上游代码，前端无改动。令牌还没有消费日志时，记为 failed，原因码 `newapi_no_usage_log`。代码在 `service/otok_upstream_billing_newapi.go`。
+- **降智检测（鹈鹕测试）**：渠道状态卡片上的「降智检测」按钮。后台每隔 N 分钟（默认 10）让启用分组的模型用同一个 prompt、同一个思考强度（默认 medium）生成「鹈鹕骑自行车」的单文件 HTML，用户在弹窗里对比不同时间的作品，判断渠道有没有降智。
+  - 只支持 OpenAI 分组。总开关和每个分组的开关、模型、间隔、prompt 都在后台「渠道管理 → 降智检测」（`/admin/otok/pelican`）配置，存在 settings 表的 `otok_pelican` 一行（JSON）。
+  - 请求走本站网关环回（`POST http://127.0.0.1:<server.port>/v1/responses`，stream），和真实用户经过同样的调度、模型映射与分组思考强度策略。发请求的是自动创建的内部用户 `pelican-probe@otok.internal`（id 记在 settings `otok_pelican_probe_user_id`），每个启用分组一把 key（`otok-pelican-<分组 id>`），该用户在这些分组的专属倍率是 0.0001，余额低于 $1 自动补到 $100。不要删除或禁用这个用户；禁用后测试会全部失败（`provision_failed`）。
+  - 这些请求会写 usage_logs，也会进渠道监控 V2 的统计。流量小的分组首 Token、耗时会被拉高；上游成本如实计入 A。
+  - 结果存在 `otok_pelican_rounds` / `otok_pelican_runs`（迁移 `otok_0003`），每个分组只保留最近 N 轮。临时失败（超时、429、5xx、流中断）重试 1 次。
+  - 预览用 `<iframe sandbox srcdoc>` 渲染，不给任何权限，并继承站点 CSP：脚本不执行、外部资源不加载，所以默认 prompt 要求只用内联 SVG/CSS。
+  - 环境变量：`OTOK_PELICAN_DISABLED=1` 关闭本实例的调度；`OTOK_PELICAN_BASE_URL` 覆盖环回地址。
+  - 代码在 `service/otok_pelican_*.go`、`handler/otok_pelican_handler.go`、`frontend/src/otok/pelican.ts`、`components/otok/monitor/OtokPelicanDialog.vue`、`views/admin/otok/OtokPelicanSettingsView.vue`。
 - **禁用后台「在线更新」**：定制版只能通过镜像升级，防止被官方二进制覆盖。
 - **GHCR 自动构建镜像**：`.github/workflows/otok-image.yml`。
 
