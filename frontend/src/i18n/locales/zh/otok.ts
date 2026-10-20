@@ -75,6 +75,7 @@ export default {
       ttft: '首 Token',
       recent: '近 {n} 次记录',
       nextRefresh: '{n}s 后刷新',
+      pending: '统计中',
       noData: '无数据',
       barTooltip: '{time} · 可用率 {availability} · 缓存率 {cache} · 首 Token {ttft}',
       empty: '暂无可展示的渠道',

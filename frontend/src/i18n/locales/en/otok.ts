@@ -75,6 +75,7 @@ export default {
       ttft: 'First token',
       recent: 'Last {n} records',
       nextRefresh: 'Refresh in {n}s',
+      pending: 'Aggregating',
       noData: 'No data',
       barTooltip: '{time} · Availability {availability} · Cache {cache} · First token {ttft}',
       empty: 'No channels to show',

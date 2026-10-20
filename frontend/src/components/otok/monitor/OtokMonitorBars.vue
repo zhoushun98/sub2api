@@ -26,7 +26,7 @@
           <span class="otok-bar-visual" :style="motionStyle(idx)" aria-hidden="true">
             <span
               class="otok-bar"
-              :class="BAR_COLOR[bar.state]"
+              :class="[BAR_COLOR[bar.state], { 'is-pending': bar.pending }]"
               :style="{ height: `${BAR_HEIGHT[bar.state]}%`, animationDelay: `${idx * 18}ms` }"
             ></span>
           </span>
@@ -150,6 +150,7 @@ function formatSlot(value: string): string {
 
 function tooltip(bar: OtokMonitorBar): string {
   const time = formatSlot(bar.start)
+  if (bar.pending) return `${time} · ${t('otok.channelCards.pending')}`
   if (bar.state === 'unknown') return `${time} · ${t('otok.channelCards.noData')}`
   return t('otok.channelCards.barTooltip', {
     time,
@@ -225,6 +226,13 @@ function tooltip(bar: OtokMonitorBar): string {
   transition: filter 200ms ease, box-shadow 200ms ease;
 }
 
+/* 统计中：沿用上一格颜色，半透明呼吸；入场动画结束后再开始呼吸 */
+.otok-bar.is-pending {
+  animation:
+    otok-bar-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both,
+    otok-bar-pending 1.6s ease-in-out 0.7s infinite;
+}
+
 .otok-bar-hitbox.is-active .otok-bar {
   filter: saturate(1.12) brightness(1.05);
   box-shadow: 0 4px 10px rgb(15 118 110 / 0.24);
@@ -275,6 +283,16 @@ function tooltip(bar: OtokMonitorBar): string {
   transform: translateX(var(--tip-shift)) translateY(calc(-100% + 3px)) scale(0.96);
 }
 
+@keyframes otok-bar-pending {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
 @keyframes otok-bar-rise {
   from {
     transform: scaleY(0.15);
@@ -289,6 +307,10 @@ function tooltip(bar: OtokMonitorBar): string {
 @media (prefers-reduced-motion: reduce) {
   .otok-bar {
     animation: none;
+  }
+
+  .otok-bar.is-pending {
+    opacity: 0.4;
   }
 
   .otok-bar-visual,

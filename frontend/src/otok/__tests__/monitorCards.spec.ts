@@ -102,6 +102,32 @@ describe('fillBars', () => {
     expect(bars[17].state).toBe('warning')
   })
 
+  it('末尾进行中的时段暂无数据时标记为统计中，沿用上一格状态', () => {
+    const cov = { ...COVERAGE_90M, data_through: '2026-10-20T06:25:00Z' }
+    const bars = fillBars(
+      cov,
+      [{ bucket_start: '2026-10-20T06:20:00Z', metrics: metric({ success_rate: 0.5, error_rate: 0.5 }), health: {} as never }],
+      '90m',
+    )
+    expect(bars[17].pending).toBe(true)
+    expect(bars[17].state).toBe('warning')
+    expect(bars[17].availability).toBeNull()
+    // 中间的空格子仍是无数据
+    expect(bars[0].pending).toBeUndefined()
+    expect(bars[0].state).toBe('unknown')
+  })
+
+  it('末尾时段已有数据或已结束时不标记统计中', () => {
+    const withData = fillBars(
+      { ...COVERAGE_90M, data_through: '2026-10-20T06:27:00Z' },
+      [{ bucket_start: '2026-10-20T06:25:00Z', metrics: metric({ success_rate: 1 }), health: {} as never }],
+      '90m',
+    )
+    expect(withData[17].pending).toBeUndefined()
+    const finished = fillBars(COVERAGE_90M, [], '90m')
+    expect(finished[17].pending).toBeUndefined()
+  })
+
   it('起点未对齐时截取末尾 N 格', () => {
     const bars = fillBars(coverage('2026-10-13T07:00:00Z', '2026-10-20T07:00:00Z', 43_200), [], '7d')
     expect(bars).toHaveLength(14)

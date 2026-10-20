@@ -24,6 +24,8 @@ export interface OtokMonitorBar {
   availability: number | null
   ttftMs: number | null
   cacheRate: number | null
+  /** 当前未结束、聚合器还没写入数据的末尾时段：沿用上一格状态，以「统计中」样式展示。 */
+  pending?: boolean
 }
 
 export interface OtokMonitorCard {
@@ -154,6 +156,10 @@ export function worseState(a: OtokCardState, b: OtokCardState): OtokCardState {
 /**
  * 按 [requested_start, requested_end) 生成完整的桶序列，再用 row.buckets 填充。
  * buckets 是稀疏的，缺的格子视为无数据。末尾截取 BAR_COUNT[range] 格，保证条数稳定。
+ *
+ * 后端把窗口终点对齐到下一个桶边界，最后一格是还没结束的当前时段；聚合器每分钟才跑一次，
+ * 每个时段开头的一两分钟里这一格必然为空。这种情况标记为 pending 并沿用上一格的状态，
+ * 不当作「无数据」。
  */
 export function fillBars(
   coverage: MonitorCoverage | null | undefined,
@@ -164,9 +170,8 @@ export function fillBars(
   const step = Math.max(60, coverage.bucket_seconds || 0) * 1000
   const start = new Date(coverage.requested_start).getTime()
   const requestedEnd = coverage.requested_end ? new Date(coverage.requested_end).getTime() : NaN
-  const end = Number.isFinite(requestedEnd) && requestedEnd > start
-    ? requestedEnd
-    : new Date(coverage.data_through).getTime()
+  const dataThrough = new Date(coverage.data_through).getTime()
+  const end = Number.isFinite(requestedEnd) && requestedEnd > start ? requestedEnd : dataThrough
   if (![start, end].every(Number.isFinite) || start >= end) return []
 
   const byStart = new Map<number, MonitorMatrixBucket>()
@@ -188,7 +193,14 @@ export function fillBars(
       cacheRate: cacheRateOf(metrics),
     })
   }
-  return bars.slice(-BAR_COUNT[range])
+  const out = bars.slice(-BAR_COUNT[range])
+  const last = out[out.length - 1]
+  const inProgress = last && (!Number.isFinite(dataThrough) || dataThrough < new Date(last.end).getTime())
+  if (last && inProgress && last.state === 'unknown') {
+    const prev = [...out].reverse().find((b) => b !== last && b.state !== 'unknown')
+    out[out.length - 1] = { ...last, pending: true, state: prev?.state ?? 'unknown' }
+  }
+  return out
 }
 
 export interface BuildCardsInput {
