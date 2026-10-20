@@ -692,6 +692,11 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 	if len(body) > upstreamBillingProbeMaxBodyBytes {
 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "response_too_large", retryAfter(resp.Header, now))
 	}
+	if otok := s.otokNewAPIBillingFallback(ctx, account, intervalMinutes, now, resp.StatusCode, otokNewAPIBillingTarget{baseURL: normalizedBaseURL, apiKey: apiKey, proxyURL: proxyURL, profile: profile, tlsProfile: tlsProfile}); otok.done { // otok
+		return otok.snapshot, otok.err // otok
+	} else if otok.body != nil { // otok
+		body, resp.StatusCode = otok.body, http.StatusOK // otok
+	} // otok
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, resp.StatusCode, "unsupported", retryAfter(resp.Header, now))
 	}

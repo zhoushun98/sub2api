@@ -17,6 +17,7 @@
 | 同上 | `selectCreateOrderInstance` 的 `SelectInstance` 调用 | 第 2 个参数 `""` 改为 `otokForcedProviderKey(req.PaymentType)` | USDT 订单只能选中 `otok_usdt` 实例。上游把 `supported_types` 为空的实例视为支持所有类型，不加限制会把 USDT 订单分给支付宝等实例 |
 | `backend/internal/service/payment_config_providers.go` | `CreateProviderInstance`，易支付校验之后 | `s.otokValidateProviderInstance(ctx, 0, ...)` | 校验 USDT 实例：类型必须是 otok 类型；勾选的网络必须填地址；同时只能启用一个。非 otok 实例不能声明 otok 类型 |
 | 同上 | `UpdateProviderInstance`，易支付校验之后 | `s.otokValidateProviderInstance(ctx, id, ...)` | 同上 |
+| `backend/internal/service/upstream_billing_probe.go` | `probeLoadedAccount`，`response_too_large` 判断之后、`404/405 → unsupported` 判断之前 | 5 行：`if otok := s.otokNewAPIBillingFallback(...); otok.done { return ... } else if otok.body != nil { body, resp.StatusCode = otok.body, http.StatusOK }` | 上游不是 sub2api 时改走 new-api 的 `/api/log/token`，识别成功则把合成的 `sub2api.key_billing` 响应交回原解析流程；不是 new-api 时原样落到 unsupported |
 | `backend/internal/handler/handler.go` | `Handlers` 结构体末尾 | `Otok *OtokHandlers` | 挂载 fork handler |
 | `backend/internal/handler/wire.go` | `ProvideSystemHandler` | `admin.NewSystemHandler(newOtokUpdateGuard(updateService), lockService)` | 禁用在线更新和回滚 |
 | 同上 | `ProvideHandlers` 参数末尾和返回值 | 新增 `otokHandlers *OtokHandlers` 参数与 `Otok: otokHandlers` 字段 | wire 注入 |
