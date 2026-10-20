@@ -99,6 +99,7 @@ export default {
       emailTitle: '邮件联系',
       emailCopied: '邮箱已复制',
       copy: '复制',
+      mobileHint: '可截图或长按二维码，在微信 / QQ 中识别',
       loadFailed: '加载联系方式失败',
       admin: {
         description: '配置侧边栏「联系我们」弹窗的内容。每一项都可以留空，留空的项不显示；全部留空时用户侧不显示入口。',

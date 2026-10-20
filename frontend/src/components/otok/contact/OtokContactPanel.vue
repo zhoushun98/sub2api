@@ -1,9 +1,10 @@
 <template>
-  <div class="space-y-6" data-testid="otok-contact-panel">
+  <div class="space-y-4 sm:space-y-6" data-testid="otok-contact-panel">
+    <!-- 手机上也左右并排，二维码随卡片宽度缩放，整个弹窗一屏放得下 -->
     <div
       v-if="sections.wechat || sections.qq"
-      class="grid grid-cols-1 gap-4"
-      :class="sections.wechat && sections.qq ? 'sm:grid-cols-2' : 'mx-auto max-w-xs'"
+      class="grid gap-3 sm:gap-4"
+      :class="sections.wechat && sections.qq ? 'grid-cols-2' : 'mx-auto max-w-xs grid-cols-1'"
     >
       <!-- 微信客服 -->
       <section v-if="sections.wechat" class="otok-contact-card" data-testid="otok-contact-wechat">
@@ -25,8 +26,8 @@
         <button
           v-if="qqGroup"
           type="button"
-          class="mx-auto inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1 text-gray-700 transition-colors hover:bg-gray-200/70 dark:text-gray-200 dark:hover:bg-dark-700"
-          :class="hasQqGroupQr ? 'mt-3 text-sm' : 'my-auto text-lg'"
+          class="mx-auto inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-1.5 py-1 text-gray-700 sm:gap-1.5 sm:px-2.5 transition-colors hover:bg-gray-200/70 dark:text-gray-200 dark:hover:bg-dark-700"
+          :class="hasQqGroupQr ? 'mt-2 text-xs sm:mt-3 sm:text-sm' : 'my-auto text-base sm:text-lg'"
           :title="t('otok.contact.copy')"
           data-testid="otok-contact-qq-group"
           @click="copy(qqGroup, t('otok.contact.groupCopied'))"
@@ -38,13 +39,15 @@
       </section>
     </div>
 
+    <p v-if="sections.wechat || sections.qq" class="text-center text-xs text-gray-400 sm:hidden">{{ t('otok.contact.mobileHint') }}</p>
+
     <!-- 邮件联系 -->
     <div v-if="sections.email" class="text-center" data-testid="otok-contact-email">
       <p class="text-xs font-semibold tracking-[0.2em] text-primary-600 dark:text-primary-400">{{ t('otok.contact.emailTitle') }}</p>
       <div class="mt-1.5 inline-flex max-w-full items-center gap-2">
         <a
           :href="`mailto:${email}`"
-          class="truncate text-xl font-semibold text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400 sm:text-2xl"
+          class="truncate text-lg font-semibold text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400 sm:text-2xl"
         >{{ email }}</a>
         <button
           type="button"
@@ -101,19 +104,19 @@ function copy(text: string, message: string) {
 
 <style scoped>
 .otok-contact-card {
-  @apply flex flex-col rounded-2xl border border-gray-100 bg-gray-50 p-5 text-center dark:border-dark-700 dark:bg-dark-800/80;
+  @apply flex min-w-0 flex-col rounded-2xl border border-gray-100 bg-gray-50 p-3 text-center dark:border-dark-700 dark:bg-dark-800/80 sm:p-5;
 }
 
 .otok-contact-card-title {
-  @apply mb-4 text-base font-semibold text-gray-900 dark:text-white;
+  @apply mb-2.5 text-sm font-semibold text-gray-900 dark:text-white sm:mb-4 sm:text-base;
 }
 
-/* 二维码固定白底，深色模式下也方便扫码 */
+/* 二维码固定白底，深色模式下也方便扫码；宽度跟随卡片，桌面最大 11rem */
 .otok-contact-qr {
-  @apply mx-auto h-44 w-44 rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-black/5;
+  @apply mx-auto aspect-square w-full max-w-[11rem] rounded-xl bg-white p-1.5 shadow-sm ring-1 ring-black/5 sm:p-2.5;
 }
 
 .otok-contact-card-hint {
-  @apply mt-auto pt-4 text-sm font-medium text-primary-600 dark:text-primary-400;
+  @apply mt-auto pt-2.5 text-xs font-medium text-primary-600 dark:text-primary-400 sm:pt-4 sm:text-sm;
 }
 </style>

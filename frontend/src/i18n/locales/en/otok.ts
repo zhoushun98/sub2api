@@ -99,6 +99,7 @@ export default {
       emailTitle: 'EMAIL',
       emailCopied: 'Email copied',
       copy: 'Copy',
+      mobileHint: 'Screenshot or long-press a QR code to scan it in WeChat / QQ',
       loadFailed: 'Failed to load contact info',
       admin: {
         description: 'Content of the "Contact Us" dialog in the sidebar. Every field is optional; empty fields are hidden, and the entry is hidden when all are empty.',
