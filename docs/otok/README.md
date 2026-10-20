@@ -4,6 +4,7 @@
 
 - **USDT 链上充值**：支持 TRC20、BSC（BEP20）、Polygon、Ethereum（ERC20），详见 [USDT_PAYMENT.md](USDT_PAYMENT.md)。
 - **渠道状态卡片页**：V2 监控模式下，用户侧「渠道状态」（`/monitor`）改为按厂商分组的卡片页，每个分组一张卡，显示缓存率 / 可用率 / 首 Token 和近 N 个时间段的状态条。数据全部复用上游 V2 被动统计接口，后端无改动。代码在 `frontend/src/otok/monitorCards.ts`、`components/otok/monitor/`、`views/user/otok/`。
+- **联系我们**：侧边栏「联系我们」弹窗，显示微信客服二维码、QQ 交流群（二维码 + 群号）和邮箱。内容在后台「联系方式」页（`/admin/otok/contact`）配置，存在 settings 表的 `otok_contact` 一行（JSON，二维码为 base64），不进 public settings。后端就地构造在 `routes/otok.go`，不经 wire。代码在 `service/otok_contact.go`、`handler/otok_contact_handler.go`、`frontend/src/otok/contact.ts`、`components/otok/contact/`。
 - **禁用后台「在线更新」**：定制版只能通过镜像升级，防止被官方二进制覆盖。
 - **GHCR 自动构建镜像**：`.github/workflows/otok-image.yml`。
 
@@ -37,7 +38,8 @@ git config rerere.enabled true   # 记住冲突的解决方式，下次同步自
 | 支付渠道 | provider key 为 `otok_usdt`；支付类型为 `otok_usdt_trc20` / `otok_usdt_bep20` / `otok_usdt_polygon` / `otok_usdt_erc20`。不要用 `usdt_trc20`，它已被上游易支付的自定义方式占用 |
 | 前端 | `src/otok/`、`src/api/otok/`、`src/components/otok/`、`src/views/**/otok/` |
 | i18n | `src/i18n/locales/{zh,en}/otok.ts`，由 `index.ts` 深合并进语言包；两个文件的 key 必须一致 |
-| 接口 | 用户端 `/api/v1/payment/otok/...`，管理端 `/api/v1/admin/payment/otok/...` |
+| 接口 | 支付相关：用户端 `/api/v1/payment/otok/...`，管理端 `/api/v1/admin/payment/otok/...`；其他：用户端 `/api/v1/otok/...`，管理端 `/api/v1/admin/otok/...` |
+| 设置项 | settings 表的 key 统一加 `otok_` 前缀（如 `otok_contact`），不往上游 public settings 里加字段 |
 | 环境变量 | `OTOK_*` |
 | 文档 | `docs/otok/`。上游的 `.gitignore` 忽略了整个 `docs/*`，新增文档要用 `git add -f`，不要改 `.gitignore` |
 

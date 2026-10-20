@@ -62,6 +62,7 @@ func RegisterOtokRoutes(
 	panelRateLimiter *middleware.PanelRateLimiter,
 	redisClient *redis.Client,
 ) {
+	registerOtokContactRoutes(v1, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
 	if h == nil {
 		return
 	}
@@ -92,5 +93,41 @@ func RegisterOtokRoutes(
 			adminGroup.GET("/orders/:id", h.AdminUSDT.GetOrder)
 			adminGroup.POST("/orders/:id/bind-tx", h.AdminUSDT.BindTx)
 		}
+	}
+}
+
+// otokContactMaxBodyBytes 容纳两张 256KB 二维码的 base64（约 700KB）再留余量。
+const otokContactMaxBodyBytes = 2 << 20
+
+// registerOtokContactRoutes 注册「联系我们」接口。只依赖 settings 表，就地构造，不经 wire。
+func registerOtokContactRoutes(
+	v1 *gin.RouterGroup,
+	jwtAuth middleware.JWTAuthMiddleware,
+	adminAuth middleware.AdminAuthMiddleware,
+	auditLog middleware.AuditLogMiddleware,
+	settingService *service.SettingService,
+	panelRateLimiter *middleware.PanelRateLimiter,
+) {
+	if settingService == nil {
+		return
+	}
+	contact := handler.NewOtokContactHandler(service.NewOtokContactService(settingService))
+
+	user := v1.Group("/otok/contact")
+	user.Use(gin.HandlerFunc(jwtAuth))
+	user.Use(middleware.BackendModeUserGuard(settingService))
+	user.Use(panelRateLimiter.Global())
+	{
+		user.GET("", contact.GetSummary)
+		user.GET("/qrcodes", contact.GetQRCodes)
+	}
+
+	adminGroup := v1.Group("/admin/otok/contact")
+	adminGroup.Use(gin.HandlerFunc(adminAuth))
+	adminGroup.Use(gin.HandlerFunc(auditLog))
+	adminGroup.Use(middleware.AdminComplianceGuard(settingService))
+	{
+		adminGroup.GET("", contact.AdminGet)
+		adminGroup.PUT("", middleware.RequestBodyLimit(otokContactMaxBodyBytes), contact.AdminUpdate)
 	}
 }

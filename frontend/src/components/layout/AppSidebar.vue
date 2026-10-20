@@ -123,6 +123,7 @@
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
           </router-link>
+          <OtokContactMenuItem /><!-- otok -->
         </div>
       </template>
 
@@ -143,6 +144,7 @@
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
           </router-link>
+          <OtokContactMenuItem /><!-- otok -->
         </div>
       </template>
     </nav>
@@ -199,6 +201,7 @@ import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { OtokContactMenuItem, OtokContactIcon } from '@/otok/sidebar' // otok
 
 interface NavItem {
   path: string
@@ -795,6 +798,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
+    { path: '/admin/otok/contact', label: t('otok.nav.contactSettings'), icon: OtokContactIcon }, // otok
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     {
       path: '/admin/security-audit',

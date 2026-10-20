@@ -16,4 +16,15 @@ export const otokRoutes: RouteRecordRaw[] = [
       requiresPayment: true,
     },
   },
+  {
+    path: '/admin/otok/contact',
+    name: 'OtokAdminContact',
+    component: () => import('@/views/admin/otok/OtokContactSettingsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Contact',
+      titleKey: 'otok.nav.contactSettings',
+    },
+  },
 ]
