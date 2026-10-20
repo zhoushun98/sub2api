@@ -85,6 +85,8 @@
             </div>
           </div>
 
+          <p class="-mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('otok.pelicanAdmin.timeoutHint') }}</p>
+
           <div>
             <label class="input-label" for="otok-pelican-models">{{ t('otok.pelicanAdmin.defaultModels') }}</label>
             <input id="otok-pelican-models" v-model="defaultModelsText" type="text" class="input font-mono" autocomplete="off" />

@@ -159,6 +159,7 @@ export default {
         xhigh: 'Extra high',
       },
       timeout: 'Timeout (seconds)',
+      timeoutHint: 'Real models usually need 2–5 minutes to write a full page at medium effort; keep the timeout at 300 seconds or more. Timeouts are not retried: upstream keeps running and billing after we disconnect.',
       concurrency: 'Concurrency',
       keepRounds: 'Rounds kept',
       defaultModels: 'Default models',

@@ -212,7 +212,7 @@ func TestDoOtokPelicanProbe_TimeoutAndRefused(t *testing.T) {
 	defer cancel()
 	res := doOtokPelicanProbe(ctx, newOtokPelicanHTTPClient(), srv.URL, "k", otokPelicanProbeRequest{Model: "m", Prompt: "p"})
 	require.Equal(t, "timeout", res.ErrCode)
-	require.True(t, res.Retryable)
+	require.False(t, res.Retryable, "超时不重试")
 	require.Equal(t, "<html>", res.Text)
 
 	closed := httptest.NewServer(http.NotFoundHandler())

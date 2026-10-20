@@ -10,7 +10,7 @@
   - 只支持 OpenAI 分组。总开关和每个分组的开关、模型、间隔、prompt 都在后台「渠道管理 → 降智检测」（`/admin/otok/pelican`）配置，存在 settings 表的 `otok_pelican` 一行（JSON）。
   - 请求走本站网关环回（`POST http://127.0.0.1:<server.port>/v1/responses`，stream），和真实用户经过同样的调度、模型映射与分组思考强度策略。发请求的是自动创建的内部用户 `pelican-probe@otok.internal`（id 记在 settings `otok_pelican_probe_user_id`），每个启用分组一把 key（`otok-pelican-<分组 id>`），该用户在这些分组的专属倍率是 0.0001，余额低于 $1 自动补到 $100。不要删除或禁用这个用户；禁用后测试会全部失败（`provision_failed`）。
   - 这些请求会写 usage_logs，也会进渠道监控 V2 的统计。流量小的分组首 Token、耗时会被拉高；上游成本如实计入 A。
-  - 结果存在 `otok_pelican_rounds` / `otok_pelican_runs`（迁移 `otok_0003`），每个分组只保留最近 N 轮。临时失败（超时、429、5xx、流中断）重试 1 次。
+  - 结果存在 `otok_pelican_rounds` / `otok_pelican_runs`（迁移 `otok_0003`），每个分组只保留最近 N 轮。临时失败（429、5xx、连接失败、流中断）重试 1 次；超时不重试，因为我们断开后网关仍会把上游跑完并计费。
   - 预览用 `<iframe sandbox srcdoc>` 渲染，不给任何权限，并继承站点 CSP：脚本不执行、外部资源不加载，所以默认 prompt 要求只用内联 SVG/CSS。
   - 环境变量：`OTOK_PELICAN_DISABLED=1` 关闭本实例的调度；`OTOK_PELICAN_BASE_URL` 覆盖环回地址。
   - 代码在 `service/otok_pelican_*.go`、`handler/otok_pelican_handler.go`、`frontend/src/otok/pelican.ts`、`components/otok/monitor/OtokPelicanDialog.vue`、`views/admin/otok/OtokPelicanSettingsView.vue`。

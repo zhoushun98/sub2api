@@ -159,6 +159,7 @@ export default {
         xhigh: '超高',
       },
       timeout: '单次超时（秒）',
+      timeoutHint: '真实模型用中等思考写一整页 HTML 通常要 2～5 分钟，单次超时建议不低于 300 秒。超时不会重试：超时断开后上游仍会跑完并计费。',
       concurrency: '并发数',
       keepRounds: '保留轮数',
       defaultModels: '默认模型',

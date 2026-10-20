@@ -144,7 +144,8 @@ func doOtokPelicanProbe(ctx context.Context, client *http.Client, baseURL, apiKe
 func setOtokPelicanTransportError(ctx context.Context, res *otokPelicanProbeResult, err error) {
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		res.ErrCode, res.ErrMessage, res.Retryable = "timeout", "request timed out", true
+		// 超时不重试：我们断开后网关仍会把上游跑完并计费，重试等于花两次钱，而且多半还会超时。
+		res.ErrCode, res.ErrMessage = "timeout", "request timed out"
 	case errors.Is(ctx.Err(), context.Canceled):
 		res.ErrCode, res.ErrMessage = "canceled", "request canceled"
 	case errors.Is(err, syscall.ECONNREFUSED):
