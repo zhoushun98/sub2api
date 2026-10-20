@@ -81,6 +81,10 @@ func (r *otokPelicanUserRepoStub) AdjustBalance(_ context.Context, id int64, del
 	r.users[id].Balance += delta
 	return BalanceChange{Old: old, New: r.users[id].Balance}, nil
 }
+func (r *otokPelicanUserRepoStub) UpdateConcurrency(_ context.Context, id int64, amount int) error {
+	r.users[id].Concurrency += amount
+	return nil
+}
 func (r *otokPelicanUserRepoStub) AddGroupToAllowedGroups(_ context.Context, _ int64, groupID int64) error {
 	r.allowed = append(r.allowed, groupID)
 	return nil

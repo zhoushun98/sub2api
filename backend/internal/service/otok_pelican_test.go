@@ -41,7 +41,7 @@ func TestNormalizeOtokPelicanConfig_Validation(t *testing.T) {
 		"interval too large": func(c *OtokPelicanConfig) { c.IntervalMinutes = 1441 },
 		"bad effort":         func(c *OtokPelicanConfig) { c.ReasoningEffort = "ultra" },
 		"timeout too small":  func(c *OtokPelicanConfig) { c.TimeoutSeconds = 30 },
-		"concurrency":        func(c *OtokPelicanConfig) { c.Concurrency = 5 },
+		"concurrency":        func(c *OtokPelicanConfig) { c.Concurrency = -1 },
 		"keep rounds":        func(c *OtokPelicanConfig) { c.KeepRounds = 51 },
 		"no models":          func(c *OtokPelicanConfig) { c.DefaultModels = nil },
 		"bad model":          func(c *OtokPelicanConfig) { c.DefaultModels = []string{"gpt 6"} },
@@ -290,7 +290,7 @@ func newOtokPelicanProvisionService(t *testing.T) (*OtokPelicanService, *otokPel
 
 func TestEnsureProbeUser_CreatesOnceAndRemembersID(t *testing.T) {
 	svc, users, settings := newOtokPelicanProvisionService(t)
-	u, err := svc.ensureProbeUser(context.Background())
+	u, err := svc.ensureProbeUser(context.Background(), 2)
 	require.NoError(t, err)
 	require.Len(t, users.created, 1)
 	require.Equal(t, otokPelicanProbeEmail, u.Email)
@@ -300,7 +300,7 @@ func TestEnsureProbeUser_CreatesOnceAndRemembersID(t *testing.T) {
 	require.NotEmpty(t, u.PasswordHash)
 	require.Equal(t, "1000", settings.values[settingKeyOtokPelicanProbeUserID])
 
-	again, err := svc.ensureProbeUser(context.Background())
+	again, err := svc.ensureProbeUser(context.Background(), 2)
 	require.NoError(t, err)
 	require.Equal(t, u.ID, again.ID)
 	require.Len(t, users.created, 1)
@@ -310,15 +310,47 @@ func TestEnsureProbeUser_TopsUpAndRespectsDisabled(t *testing.T) {
 	svc, users, _ := newOtokPelicanProvisionService(t)
 	users.users[7] = &User{ID: 7, Email: otokPelicanProbeEmail, Status: StatusActive, Balance: 0.5}
 	users.byEmail[otokPelicanProbeEmail] = users.users[7]
-	u, err := svc.ensureProbeUser(context.Background())
+	u, err := svc.ensureProbeUser(context.Background(), 2)
 	require.NoError(t, err)
 	require.Equal(t, int64(7), u.ID)
 	require.Equal(t, []float64{99.5}, users.adjusted)
 	require.InDelta(t, 100, u.Balance, 1e-9)
 
 	users.users[7].Status = StatusDisabled
-	_, err = svc.ensureProbeUser(context.Background())
+	_, err = svc.ensureProbeUser(context.Background(), 2)
 	require.ErrorContains(t, err, "disabled")
+}
+
+func TestNormalizeOtokPelicanConfig_ConcurrencyHasNoUpperLimit(t *testing.T) {
+	cfg, err := NormalizeOtokPelicanConfig(OtokPelicanConfig{DefaultModels: []string{"m"}, Concurrency: 32})
+	require.NoError(t, err)
+	require.Equal(t, 32, cfg.Concurrency)
+}
+
+func TestEnsureProbeUser_RaisesConcurrencyToConfig(t *testing.T) {
+	svc, users, _ := newOtokPelicanProvisionService(t)
+	u, err := svc.ensureProbeUser(context.Background(), 2)
+	require.NoError(t, err)
+	require.Equal(t, otokPelicanProbeConcurrency, u.Concurrency, "新建时至少 8")
+
+	u, err = svc.ensureProbeUser(context.Background(), 20)
+	require.NoError(t, err)
+	require.Equal(t, 20, u.Concurrency)
+	require.Equal(t, 20, users.users[u.ID].Concurrency)
+
+	// 调低配置不回调用户并发
+	u, err = svc.ensureProbeUser(context.Background(), 3)
+	require.NoError(t, err)
+	require.Equal(t, 20, u.Concurrency)
+
+	created, err := newOtokPelicanCreateService(t).ensureProbeUser(context.Background(), 16)
+	require.NoError(t, err)
+	require.Equal(t, 16, created.Concurrency, "新建时直接按配置")
+}
+
+func newOtokPelicanCreateService(t *testing.T) *OtokPelicanService {
+	svc, _, _ := newOtokPelicanProvisionService(t)
+	return svc
 }
 
 func TestEnsureProbeKey_GrantsExclusiveSetsRateAndReusesKey(t *testing.T) {

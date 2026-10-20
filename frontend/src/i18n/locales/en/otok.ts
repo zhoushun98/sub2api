@@ -189,7 +189,7 @@ export default {
         OTOK_PELICAN_INVALID_EFFORT: 'Invalid reasoning effort',
         OTOK_PELICAN_PROMPT_TOO_LONG: 'Prompt must be at most 8000 characters',
         OTOK_PELICAN_INVALID_TIMEOUT: 'Timeout must be between 60 and 900 seconds',
-        OTOK_PELICAN_INVALID_CONCURRENCY: 'Concurrency must be between 1 and 4',
+        OTOK_PELICAN_INVALID_CONCURRENCY: 'Concurrency must be at least 1',
         OTOK_PELICAN_INVALID_KEEP_ROUNDS: 'Rounds kept must be between 1 and 50',
         OTOK_PELICAN_NO_MODELS: 'Default models must not be empty',
         OTOK_PELICAN_INVALID_MODEL: 'Invalid model name',

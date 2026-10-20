@@ -24,7 +24,6 @@ const (
 	otokPelicanMinTimeout         = 60
 	otokPelicanMaxTimeout         = 900
 	otokPelicanDefaultConcurrency = 2
-	otokPelicanMaxConcurrency     = 4
 	otokPelicanDefaultKeepRounds  = 10
 	otokPelicanMaxKeepRounds      = 50
 	otokPelicanMaxPromptRunes     = 8000
@@ -137,8 +136,9 @@ func NormalizeOtokPelicanConfig(in OtokPelicanConfig) (OtokPelicanConfig, error)
 	if out.Concurrency == 0 {
 		out.Concurrency = otokPelicanDefaultConcurrency
 	}
-	if out.Concurrency < 1 || out.Concurrency > otokPelicanMaxConcurrency {
-		return OtokPelicanConfig{}, otokPelicanInvalid("INVALID_CONCURRENCY", "concurrency must be between 1 and 4")
+	// 并发不设上限；内部账号的用户级并发会跟着调高（见 ensureProbeUser）。
+	if out.Concurrency < 1 {
+		return OtokPelicanConfig{}, otokPelicanInvalid("INVALID_CONCURRENCY", "concurrency must be at least 1")
 	}
 	if out.KeepRounds == 0 {
 		out.KeepRounds = otokPelicanDefaultKeepRounds

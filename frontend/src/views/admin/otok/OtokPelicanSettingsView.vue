@@ -77,7 +77,7 @@
             </div>
             <div>
               <label class="input-label" for="otok-pelican-concurrency">{{ t('otok.pelicanAdmin.concurrency') }}</label>
-              <input id="otok-pelican-concurrency" v-model.number="form.concurrency" type="number" min="1" max="4" class="input" />
+              <input id="otok-pelican-concurrency" v-model.number="form.concurrency" type="number" min="1" class="input" />
             </div>
             <div>
               <label class="input-label" for="otok-pelican-keep">{{ t('otok.pelicanAdmin.keepRounds') }}</label>

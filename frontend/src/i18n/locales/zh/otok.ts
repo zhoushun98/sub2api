@@ -189,7 +189,7 @@ export default {
         OTOK_PELICAN_INVALID_EFFORT: '思考强度不合法',
         OTOK_PELICAN_PROMPT_TOO_LONG: 'Prompt 不能超过 8000 字',
         OTOK_PELICAN_INVALID_TIMEOUT: '单次超时需在 60～900 秒之间',
-        OTOK_PELICAN_INVALID_CONCURRENCY: '并发数需在 1～4 之间',
+        OTOK_PELICAN_INVALID_CONCURRENCY: '并发数至少为 1',
         OTOK_PELICAN_INVALID_KEEP_ROUNDS: '保留轮数需在 1～50 之间',
         OTOK_PELICAN_NO_MODELS: '默认模型不能为空',
         OTOK_PELICAN_INVALID_MODEL: '模型名不合法',

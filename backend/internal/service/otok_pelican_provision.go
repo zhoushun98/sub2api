@@ -29,8 +29,10 @@ const (
 	otokPelicanKeyNamePrefix    = "otok-pelican-"
 )
 
-// ensureProbeUser 取得（必要时创建）内部用户，并保证余额充足。
-func (s *OtokPelicanService) ensureProbeUser(ctx context.Context) (*User, error) {
+// ensureProbeUser 取得（必要时创建）内部用户，保证余额充足，且用户级并发不低于 minConcurrency
+// （网关按用户限制同时在途的请求数，低于配置的并发会让多出的测试请求被拒或排队）。
+func (s *OtokPelicanService) ensureProbeUser(ctx context.Context, minConcurrency int) (*User, error) {
+	wantConcurrency := max(otokPelicanProbeConcurrency, minConcurrency)
 	if s.userRepo == nil {
 		return nil, errors.New("user repository unavailable")
 	}
@@ -50,7 +52,7 @@ func (s *OtokPelicanService) ensureProbeUser(ctx context.Context) (*User, error)
 		}
 	}
 	if user == nil {
-		created, err := s.createProbeUser(ctx)
+		created, err := s.createProbeUser(ctx, wantConcurrency)
 		if err != nil {
 			return nil, err
 		}
@@ -62,6 +64,14 @@ func (s *OtokPelicanService) ensureProbeUser(ctx context.Context) (*User, error)
 	if !user.IsActive() {
 		// 管理员手动禁用了内部账号，视为有意停用，不自动恢复。
 		return nil, fmt.Errorf("probe user %d is %s", user.ID, user.Status)
+	}
+	if user.Concurrency < wantConcurrency {
+		if err := s.userRepo.UpdateConcurrency(ctx, user.ID, wantConcurrency-user.Concurrency); err != nil {
+			return nil, fmt.Errorf("raise probe user concurrency: %w", err)
+		}
+		slog.Info("[OtokPelican] raised probe user concurrency", "user_id", user.ID, "from", user.Concurrency, "to", wantConcurrency)
+		user.Concurrency = wantConcurrency
+		s.invalidateProbeUserCaches(ctx, user.ID)
 	}
 	if user.Balance < otokPelicanProbeMinBalance {
 		change, err := s.userRepo.AdjustBalance(ctx, user.ID, otokPelicanProbeBalance-user.Balance)
@@ -75,7 +85,7 @@ func (s *OtokPelicanService) ensureProbeUser(ctx context.Context) (*User, error)
 	return user, nil
 }
 
-func (s *OtokPelicanService) createProbeUser(ctx context.Context) (*User, error) {
+func (s *OtokPelicanService) createProbeUser(ctx context.Context, concurrency int) (*User, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return nil, err
@@ -86,7 +96,7 @@ func (s *OtokPelicanService) createProbeUser(ctx context.Context) (*User, error)
 		Notes:       otokPelicanProbeNotes,
 		Role:        RoleUser,
 		Balance:     otokPelicanProbeBalance,
-		Concurrency: otokPelicanProbeConcurrency,
+		Concurrency: concurrency,
 		Status:      StatusActive,
 	}
 	// 随机密码不落地，没人能登录这个账号。

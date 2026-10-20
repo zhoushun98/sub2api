@@ -464,7 +464,7 @@ func (s *OtokPelicanService) RunNow(ctx context.Context, groupID int64) (int64, 
 // startRound 准备内部账号与 key，新建一轮并把请求放进队列。准备失败时也落一轮失败记录，用户侧可见、并按间隔重试。
 func (s *OtokPelicanService) startRound(ctx context.Context, cfg OtokPelicanConfig, g OtokPelicanGroupConfig, trigger string) (int64, error) {
 	models := cfg.ModelsFor(g)
-	key, provisionErr := s.provision(ctx, g.GroupID)
+	key, provisionErr := s.provision(ctx, g.GroupID, cfg.Concurrency)
 	roundID, refs, err := otokPelicanCreateRound(ctx, s.db, g.GroupID, trigger, cfg.ReasoningEffort, models)
 	if err != nil {
 		return 0, err
@@ -492,7 +492,7 @@ func (s *OtokPelicanService) startRound(ctx context.Context, cfg OtokPelicanConf
 	return roundID, nil
 }
 
-func (s *OtokPelicanService) provision(ctx context.Context, groupID int64) (string, error) {
+func (s *OtokPelicanService) provision(ctx context.Context, groupID int64, concurrency int) (string, error) {
 	s.provisionMu.Lock()
 	defer s.provisionMu.Unlock()
 	group, err := s.probeGroup(ctx, groupID)
@@ -500,7 +500,7 @@ func (s *OtokPelicanService) provision(ctx context.Context, groupID int64) (stri
 		s.setGroupError(groupID, err.Error())
 		return "", err
 	}
-	user, err := s.ensureProbeUser(ctx)
+	user, err := s.ensureProbeUser(ctx, concurrency)
 	if err != nil {
 		s.setGroupError(0, err.Error())
 		return "", err
