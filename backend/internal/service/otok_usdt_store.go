@@ -113,20 +113,23 @@ type otokUSDTTransfer struct {
 	CreditAttempts int
 	// AmountOverride 为 true 表示由管理员补单绑定，入账时不要求金额与订单一致。
 	AmountOverride bool
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// LastError 是最近一次入账复核失败的原因，复核成功后清空。
+	LastError   string
+	LastErrorAt sql.NullTime
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 const otokTransferColumns = `id, network, tx_hash, log_index, block_number, block_hash, block_time, from_address,
 	to_address_norm, token_contract, amount_raw::text, decimals, order_id, source, status, note, credit_attempts,
-	amount_override, created_at, updated_at`
+	amount_override, last_error, last_error_at, created_at, updated_at`
 
 func scanOtokTransfer(rows *sql.Rows) (*otokUSDTTransfer, error) {
 	var t otokUSDTTransfer
 	var network, amount string
 	if err := rows.Scan(&t.ID, &network, &t.TxHash, &t.LogIndex, &t.BlockNumber, &t.BlockHash, &t.BlockTime, &t.FromAddress,
 		&t.ToAddressNorm, &t.TokenContract, &amount, &t.Decimals, &t.OrderID, &t.Source, &t.Status, &t.Note, &t.CreditAttempts,
-		&t.AmountOverride, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		&t.AmountOverride, &t.LastError, &t.LastErrorAt, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return nil, err
 	}
 	t.Network = otokchain.Network(network)
@@ -387,6 +390,22 @@ func otokSetTransferStatus(ctx context.Context, ex otokExecutor, id int64, statu
 	_, err := ex.ExecContext(ctx, `UPDATE otok_usdt_transfers SET status = $2,
 		note = CASE WHEN $3 = '' THEN note ELSE $3 END, credit_attempts = credit_attempts + $4, updated_at = NOW()
 		WHERE id = $1`, id, status, note, inc)
+	return err
+}
+
+// otokSaveTransferError 记录入账复核失败原因；传 nil 清空。不改 updated_at，
+// 以免影响 credit_failed 的退避和「链上消失」的判定。
+func otokSaveTransferError(ctx context.Context, ex otokExecutor, id int64, creditErr error) error {
+	if creditErr == nil {
+		_, err := ex.ExecContext(ctx, `UPDATE otok_usdt_transfers SET last_error = '', last_error_at = NULL
+			WHERE id = $1 AND last_error <> ''`, id)
+		return err
+	}
+	msg := creditErr.Error()
+	if len(msg) > 500 {
+		msg = msg[:500]
+	}
+	_, err := ex.ExecContext(ctx, `UPDATE otok_usdt_transfers SET last_error = $2, last_error_at = NOW() WHERE id = $1`, id, msg)
 	return err
 }
 

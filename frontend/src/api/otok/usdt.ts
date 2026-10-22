@@ -37,6 +37,8 @@ export interface OtokUsdtTransfer {
   status: 'seen' | 'bound' | 'credited' | 'credit_failed' | 'review' | 'ignored' | 'dropped'
   note?: string
   credit_attempts: number
+  last_error?: string
+  last_error_at?: string
   confirmations?: number
   created_at: string
 }
@@ -79,6 +81,7 @@ export interface OtokUsdtHealth {
   review_transfers: number
   credit_failed_transfers: number
   awaiting_confirmation_transfers: number
+  credit_blocked_transfers: number
   cursors: OtokUsdtHealthCursor[] | null
 }
 

@@ -64,7 +64,7 @@ var mainnetSpecs = map[Network]Spec{
 	NetworkBEP20: {
 		Network: NetworkBEP20, Kind: KindEVM, DisplayName: "BNB Smart Chain (BEP20)", ChainID: 56,
 		TokenContract: "0x55d398326f99059fF775485246999027B3197955", Decimals: 18, Confirmations: 15,
-		DefaultEndpoint: "https://bsc-rpc.publicnode.com", AvgBlockSeconds: 0.75,
+		DefaultEndpoint: "https://bsc.rpc.blxrbdn.com", AvgBlockSeconds: 0.75,
 		ExplorerTxURL: "https://bscscan.com/tx/%s",
 	},
 	NetworkPolygon: {

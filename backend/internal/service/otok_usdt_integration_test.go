@@ -85,7 +85,7 @@ func otokIntegrationClient(t *testing.T) *dbent.Client {
 }
 
 func otokApplyMigration(ctx context.Context, client *dbent.Client) error {
-	for _, name := range []string{"otok_0001_usdt.sql", "otok_0002_usdt_hardening.sql", "otok_0003_pelican.sql"} {
+	for _, name := range []string{"otok_0001_usdt.sql", "otok_0002_usdt_hardening.sql", "otok_0003_pelican.sql", "otok_0004_usdt_transfer_error.sql"} {
 		raw, err := migrations.FS.ReadFile(name)
 		if err != nil {
 			return err
@@ -556,4 +556,67 @@ func TestOtokUSDTMatchingRules(t *testing.T) {
 	notBound, err = otokGetTransferByOrder(ctx, client, orderE.ID)
 	require.NoError(t, err)
 	require.Nil(t, notBound)
+}
+
+// 链上复核出错（RPC 故障）时：转账保持 bound、不计重试次数、不改 updated_at，错误记到 last_error；
+// 复核恢复后清空。
+func TestOtokUSDTCreditErrorRecorded(t *testing.T) {
+	client := otokIntegrationClient(t)
+	ctx := context.Background()
+	svc := NewOtokUSDTService(&PaymentService{entClient: client}, client, 0)
+
+	var failing atomic.Bool
+	failing.Store(true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if failing.Load() {
+			http.Error(w, `{"error":"archive requests require a personal token"}`, http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("OTOK_USDT_TRON_API_URL", srv.URL)
+	t.Setenv("OTOK_USDT_ALLOW_PRIVATE_RPC", "1")
+
+	order := otokCreateTestOrder(t, ctx, client, OrderStatusPending)
+	require.NoError(t, otokReserveInTx(ctx, client, otokTestReservation(order, 1409)))
+	r := otokBackdateReservation(t, ctx, client, order.ID, 5*time.Minute)
+	row, err := otokUpsertTransfer(ctx, client, otokchain.Transfer{
+		Network: otokchain.NetworkTRC20, TxHash: "f1" + fmt.Sprintf("%062d", 6), BlockTime: time.Now().Add(-time.Minute),
+		From: otokTestTronAddress, ToNorm: otokTestTronAddress, Amount: otokchain.CentsToRaw(r.AmountCents, 6),
+	}, "a614f803b6fd780986a42c78ec9c7f77e6ded13c", 6, otokSourceWatcher)
+	require.NoError(t, err)
+	ok, err := otokBindTransfer(ctx, client, row.ID, order.ID, "matched by watcher", false)
+	require.NoError(t, err)
+	require.True(t, ok)
+	bound, err := otokGetTransfer(ctx, client, row.ID)
+	require.NoError(t, err)
+
+	credited, err := svc.creditBoundTransfer(ctx, bound, otokUSDTWatcherOperator)
+	require.Error(t, err)
+	require.False(t, credited)
+	after, err := otokGetTransfer(ctx, client, row.ID)
+	require.NoError(t, err)
+	require.Equal(t, otokTransferBound, after.Status)
+	require.Zero(t, after.CreditAttempts)
+	require.True(t, after.UpdatedAt.Equal(bound.UpdatedAt), "updated_at must not change")
+	require.Contains(t, after.LastError, "403")
+	require.True(t, after.LastErrorAt.Valid)
+	h, err := svc.Health(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, h.CreditBlocked)
+	require.Equal(t, after.LastError, svc.transferView(ctx, after, true).LastError)
+	require.Empty(t, svc.transferView(ctx, after, false).LastError, "users must not see RPC errors")
+
+	failing.Store(false)
+	_, err = svc.creditBoundTransfer(ctx, after, otokUSDTWatcherOperator)
+	require.NoError(t, err)
+	cleared, err := otokGetTransfer(ctx, client, row.ID)
+	require.NoError(t, err)
+	require.Equal(t, otokTransferBound, cleared.Status)
+	require.Empty(t, cleared.LastError)
+	require.False(t, cleared.LastErrorAt.Valid)
+	h, err = svc.Health(ctx)
+	require.NoError(t, err)
+	require.Zero(t, h.CreditBlocked)
 }

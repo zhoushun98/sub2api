@@ -9,7 +9,7 @@
             <span v-if="health?.testnet" class="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{{ t('otok.usdt.testnet') }}</span>
           </h3>
         </div>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <div v-for="stat in healthStats" :key="stat.key" class="rounded-lg bg-gray-50 px-3 py-2 dark:bg-dark-800">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ stat.label }}</p>
             <p :class="['text-lg font-semibold tabular-nums', stat.warn && stat.value > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white']">{{ stat.value }}</p>
@@ -91,7 +91,10 @@
                 <span class="ml-1 text-gray-400">{{ statusLabel('sources', row.source) }}</span>
               </td>
               <td class="whitespace-nowrap px-4 py-2 text-xs">{{ row.order_id ? `#${row.order_id}` : '-' }}</td>
-              <td class="max-w-xs px-4 py-2 text-xs text-gray-500 dark:text-gray-400" :title="row.note">{{ truncate(row.note || '', 60) }}</td>
+              <td class="max-w-xs px-4 py-2 text-xs text-gray-500 dark:text-gray-400" :title="row.note">
+                <p v-if="row.last_error" class="text-red-600 dark:text-red-400" :title="row.last_error">{{ formatOrderDateTime(row.last_error_at || '') }} · {{ truncate(row.last_error, 60) }}</p>
+                {{ truncate(row.note || '', 60) }}
+              </td>
               <td class="whitespace-nowrap px-4 py-2 text-right">
                 <button
                   v-if="!row.order_id && (row.status === 'seen' || row.status === 'review')"
@@ -174,6 +177,7 @@ const healthStats = computed(() => {
     { key: 'unmatched', label: t('otok.usdt.unmatchedTransfers'), value: h?.unmatched_transfers ?? 0, warn: true },
     { key: 'review', label: t('otok.usdt.reviewTransfers'), value: h?.review_transfers ?? 0, warn: true },
     { key: 'failed', label: t('otok.usdt.creditFailedTransfers'), value: h?.credit_failed_transfers ?? 0, warn: true },
+    { key: 'blocked', label: t('otok.usdt.creditBlockedTransfers'), value: h?.credit_blocked_transfers ?? 0, warn: true },
     { key: 'awaiting', label: t('otok.usdt.awaitingConfirmation'), value: h?.awaiting_confirmation_transfers ?? 0, warn: false },
   ]
 })

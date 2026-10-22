@@ -7,11 +7,12 @@
 | 支付类型 | 网络 | USDT 合约 | 精度 | 确认要求 | 默认数据源 |
 | --- | --- | --- | --- | --- | --- |
 | `otok_usdt_trc20` | TRON | `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t` | 6 | 固化区块（约 19 块，1 分钟左右） | TronGrid `https://api.trongrid.io` |
-| `otok_usdt_bep20` | BNB Smart Chain | `0x55d398326f99059fF775485246999027B3197955` | **18** | 15 块 | `https://bsc-rpc.publicnode.com` |
+| `otok_usdt_bep20` | BNB Smart Chain | `0x55d398326f99059fF775485246999027B3197955` | **18** | 15 块 | `https://bsc.rpc.blxrbdn.com`（bloXroute） |
 | `otok_usdt_polygon` | Polygon PoS | `0xc2132D05D31c914a87C6611C10748AEb04B58e8F` | 6 | 64 块 | `https://polygon-bor-rpc.publicnode.com` |
 | `otok_usdt_erc20` | Ethereum | `0xdAC17F958D2ee523a2206206994597C13D831ec7` | 6 | 12 块 | `https://ethereum-rpc.publicnode.com` |
 
 - 合约地址、精度、chainId 都**写死在代码里**（`internal/pkg/otokchain/networks.go`），不能在后台修改，防止被配置成假币合约。
+- BSC 默认不用 PublicNode：2026-10 起 `bsc-rpc.publicnode.com` 对 `eth_getTransactionReceipt` 一律返回 403（`Archive requests require a personal token`），能匹配到订单却永远入不了账。换 RPC 时要同时验证 `eth_getLogs`（扫描）和 `eth_getTransactionReceipt`（入账复核）两个方法，BNB 官方的 `bsc-dataseed*` 能查回执但 `eth_getLogs` 报 `limit exceeded`，不能用。
 - EVM 链每次扫描前都会校验 `eth_chainId`，RPC 填错链会直接报错，不会误记账。
 
 ## 后台配置
@@ -25,7 +26,7 @@
 | 手续费率（`feeRate`） | 否 | 百分数，默认 0。USDT 渠道单独计费，**不受全局充值手续费影响** |
 | 各网络收款地址 | 勾选的网络必填 | 填自己掌握私钥的钱包地址，**不要填交易所充值地址**（交易所可能不入账或合并入账）。EVM 地址大小写混合时会做 EIP-55 校验；零地址和 USDT 合约地址会被拒绝 |
 | TronGrid API Key（`tronGridApiKey`） | 否，但强烈建议 | 到 [trongrid.io](https://www.trongrid.io/) 免费申请。不配置时公共额度很容易被限流，到账会变慢。该字段按敏感字段处理：列表接口不回显，审计日志脱敏 |
-| BSC / Polygon / Ethereum RPC 地址 | 否 | 留空使用 PublicNode 公共节点，建议换成自己的节点。地址按明文保存，尽量不要用 URL 中带密钥的地址 |
+| BSC / Polygon / Ethereum RPC 地址 | 否 | 留空使用上表的默认公共节点，建议换成自己的节点或带 Key 的付费节点。地址按明文保存，尽量不要用 URL 中带密钥的地址 |
 | 订单有效期（`expireMinutes`） | 否 | 默认 30 分钟，范围 5～1440 |
 | 过期后保留时间（`graceMinutes`） | 否 | 默认 60 分钟，范围 0～1440。订单过期后，这段时间内金额仍保留给该订单，到账仍会自动入账 |
 
@@ -137,12 +138,12 @@
 
 ## 数据表
 
-迁移文件为 `backend/migrations/otok_0001_usdt.sql`（建表）和 `otok_0002_usdt_hardening.sql`（金额唯一性改为按地址跨网络，转账表加 `amount_override`），只新增以下 3 张表，不改上游表：
+迁移文件为 `backend/migrations/otok_0001_usdt.sql`（建表）、`otok_0002_usdt_hardening.sql`（金额唯一性改为按地址跨网络，转账表加 `amount_override`）和 `otok_0004_usdt_transfer_error.sql`（转账表加 `last_error` / `last_error_at`），只新增以下 3 张表，不改上游表：
 
 | 表 | 内容 |
 | --- | --- |
 | `otok_usdt_orders` | 每张 USDT 订单的金额预留：网络、地址、金额（分）、汇率快照、状态 `pending` / `bound` / `credited` / `released`、保留截止时间 |
-| `otok_usdt_transfers` | 观察到的所有入账转账，按 `(network, tx_hash, log_index)` 唯一；同一订单最多绑定一笔转账。状态：`seen` 未匹配、`bound` 已匹配待入账、`credited` 已入账、`credit_failed` 入账失败、`review` 待审核、`ignored` 已忽略、`dropped` 已失效 |
+| `otok_usdt_transfers` | 观察到的所有入账转账，按 `(network, tx_hash, log_index)` 唯一；同一订单最多绑定一笔转账。状态：`seen` 未匹配、`bound` 已匹配待入账、`credited` 已入账、`credit_failed` 入账失败、`review` 待审核、`ignored` 已忽略、`dropped` 已失效。`last_error` 记录最近一次入账复核失败的原因（多为 RPC 报错），复核成功后清空 |
 | `otok_usdt_scan_cursors` | 各网络的扫描进度和最近一次错误 |
 
 ## 排障
@@ -150,9 +151,10 @@
 - **用户说转了账但没到账**：
   1. 到「USDT 到账记录」用交易哈希或付款地址搜索。
   2. 搜不到：先看监听状态里对应网络的「最近错误」，常见原因是 RPC 限流或 TronGrid 没配 Key。
-  3. 状态是「未匹配」：多半是金额不对，或者付款时订单金额已经被释放。核对后到对应订单里手动补单。
-  4. 状态是「待审核」：入账前发现金额与订单不一致，或链上复核失败。人工核实后补单或忽略。
-  5. 用户自己提交交易哈希被拒：审计日志里 `OTOK_USDT_TX_REJECTED` 记录了每笔转账被拒的原因（金额、状态、区块时间）。
+  3. 状态是「已匹配」但订单一直待支付：看监听状态里的「入账受阻」和这一行备注里的红字错误。入账前要再查一次交易回执 / 详情，RPC 出错时会每 15 秒重试、不计入重试次数，但会一直卡住。常见原因是 RPC 节点拒绝或限流，到后台 USDT 渠道里把对应链的 RPC 地址换成可用节点，下一轮就会自动入账，不用重启。
+  4. 状态是「未匹配」：多半是金额不对，或者付款时订单金额已经被释放。核对后到对应订单里手动补单。
+  5. 状态是「待审核」：入账前发现金额与订单不一致，或链上复核失败。人工核实后补单或忽略。
+  6. 用户自己提交交易哈希被拒：审计日志里 `OTOK_USDT_TX_REJECTED` 记录了每笔转账被拒的原因（金额、状态、区块时间）。
 - **从交易所提币**：多数交易所会从提币金额里扣手续费，到账金额就不等于应付金额。需要提醒用户按「到账金额」填写，或者让用户提交 TxHash 后人工处理。
 - **查看日志**：日志关键字为 `[OtokUSDT]`，例如 `docker logs sub2api 2>&1 | grep OtokUSDT`。
 

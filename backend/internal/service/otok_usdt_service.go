@@ -305,7 +305,15 @@ func (s *OtokUSDTService) verifyOnChain(ctx context.Context, t *otokUSDTTransfer
 
 // creditBoundTransfer 对已绑定订单的转账做链上复核并入账。三条入口（监听、用户、管理员）共用。
 // 返回 credited=true 表示订单已处于已支付状态。
-func (s *OtokUSDTService) creditBoundTransfer(ctx context.Context, t *otokUSDTTransfer, operator string) (bool, error) {
+// 出错（多为链上 RPC 故障）时转账保持原状态等下一轮重试，错误记到 last_error 供后台查看。
+func (s *OtokUSDTService) creditBoundTransfer(ctx context.Context, t *otokUSDTTransfer, operator string) (credited bool, err error) {
+	defer func() {
+		if err != nil || t.LastError != "" {
+			if saveErr := otokSaveTransferError(ctx, s.entClient, t.ID, err); saveErr != nil {
+				slog.Warn("[OtokUSDT] save transfer credit error failed", "tx", t.TxHash, "error", saveErr)
+			}
+		}
+	}()
 	if !t.OrderID.Valid {
 		return false, nil
 	}
@@ -769,6 +777,8 @@ type OtokUSDTTransferView struct {
 	Status         string     `json:"status"`
 	Note           string     `json:"note,omitempty"`
 	CreditAttempts int        `json:"credit_attempts"`
+	LastError      string     `json:"last_error,omitempty"`
+	LastErrorAt    *time.Time `json:"last_error_at,omitempty"`
 	Confirmations  *int64     `json:"confirmations,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 }
@@ -804,6 +814,11 @@ func (s *OtokUSDTService) transferView(ctx context.Context, t *otokUSDTTransfer,
 	}
 	if admin {
 		v.Note = t.Note
+		v.LastError = t.LastError
+		if t.LastErrorAt.Valid {
+			at := t.LastErrorAt.Time
+			v.LastErrorAt = &at
+		}
 	}
 	return v
 }
@@ -947,6 +962,7 @@ type OtokUSDTHealth struct {
 	ReviewTransfers     int64                `json:"review_transfers"`
 	CreditFailed        int64                `json:"credit_failed_transfers"`
 	AwaitingConfirmTxns int64                `json:"awaiting_confirmation_transfers"`
+	CreditBlocked       int64                `json:"credit_blocked_transfers"`
 	Cursors             []OtokUSDTCursorView `json:"cursors"`
 }
 
@@ -976,6 +992,7 @@ func (s *OtokUSDTService) Health(ctx context.Context) (*OtokUSDTHealth, error) {
 		ReviewTransfers:     otokCount(ctx, s.entClient, `SELECT COUNT(*) FROM otok_usdt_transfers WHERE status = 'review'`),
 		CreditFailed:        otokCount(ctx, s.entClient, `SELECT COUNT(*) FROM otok_usdt_transfers WHERE status = 'credit_failed'`),
 		AwaitingConfirmTxns: otokCount(ctx, s.entClient, `SELECT COUNT(*) FROM otok_usdt_transfers WHERE status = 'bound'`),
+		CreditBlocked:       otokCount(ctx, s.entClient, `SELECT COUNT(*) FROM otok_usdt_transfers WHERE status = 'bound' AND last_error <> ''`),
 	}
 	for _, c := range cursors {
 		v := OtokUSDTCursorView{Network: string(c.Network), Address: c.AddressNorm, LastBlock: c.LastBlock, LastError: c.LastError}
