@@ -5,7 +5,7 @@
 同步上游起冲突时，先以官方代码为准解决冲突，再按本表逐条把钩子补回去。
 
 - 用 `git grep -n "otok" -- ':!docs' ':!*otok*'` 可以快速核对钩子是否都在。
-- 基线：v0.2.17（`b0a02a330`）。
+- 基线：v0.2.18（`5c185c5c5`，即 tag 之后的 VERSION 同步提交）。
 
 ## 后端
 
@@ -27,7 +27,7 @@
 | 同上 | `provideCleanup` 参数末尾 | `otokPelican *service.OtokPelicanService` | 降智检测调度优雅停机 |
 | 同上 | `provideCleanup` 的并行清理步骤 | `{"OtokUSDTService", ...Stop()}`、`{"OtokPelicanService", ...Stop()}` | 优雅停机 |
 | `backend/cmd/server/wire_gen_test.go` | `provideCleanup` 的按位置调用 | 末尾补 `nil, // otokUSDT`、`nil, // otokPelican` | 适配新增参数 |
-| `backend/cmd/server/wire_gen.go` | 生成文件 | `cd backend && go generate ./cmd/server` 重新生成 | 不要手改 |
+| `backend/cmd/server/wire_gen.go` | 生成文件 | `cd backend/cmd/server && ~/go/bin/wire` 重新生成 | 不要手改 |
 
 经核验以下上游文件**无需修改**：`payment/types.go`、`load_balancer.go`、`payment_fulfillment.go`、`payment_order_lifecycle.go`、`payment_config_limits.go`、`payment_config_service.go`、`update_service.go`。fork 通过 `init()`（`otok_usdt_register.go`）向上游的以下几张表追加 `otok_usdt` 条目，它们是 map，上游改名或改结构时需要跟着调整：
 

@@ -69,7 +69,7 @@ git config rerere.enabled true   # 记住冲突的解决方式，下次同步自
 5. **不手改 `backend/cmd/server/VERSION`**。版本号由 CI 注入，格式为 `<上游版本>-otok.<N>`。
 6. **commit message** 统一用 `feat(otok): …`、`fix(otok): …`、`docs(otok): …`，`git log --grep otok` 即可列出全部定制提交。
 7. **`cmd/server/wire_gen.go` 用 wire 重新生成**：
-   - 执行 `cd backend && go generate ./cmd/server`。
+   - 执行 `cd backend/cmd/server && ~/go/bin/wire`（`go generate` 走 `go run`，而 `go.sum` 不含 wire CLI 的依赖，会报 missing go.sum entry；不要为此改 `go.sum`）。
    - 不要用 `make generate`，它会连 Ent 一起重新生成。
 8. **fork 上的 Actions**：
    - `release.yml`、`cla.yml` 已在 GitHub 上 disable（文件本身不改）。前者会被 `v*` tag 触发官方发布流程，还会把 VERSION 回写到 main。
@@ -89,10 +89,12 @@ git checkout otok
 git merge v0.2.18            # 换成要同步的官方 tag
 ```
 
+上游的 `VERSION` 是在打 tag **之后**才由 `chore: sync VERSION to <版本> [skip ci]` 提交同步的，tag 本身的 `VERSION` 还是上一版。发版时 CI 要求 tag 里的上游版本等于 `VERSION`，所以实际合并的是 tag 之后这一条同步提交（`git log --oneline v<新版本>..upstream/main` 找到它，确认它和 tag 之间没有别的提交），不要手改 `VERSION`。
+
 有冲突时：
 
 1. 按 [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) 逐条核对：上游代码以官方为准，再把 otok 钩子补回去。
-2. 重新生成 wire：`cd backend && go generate ./cmd/server`。
+2. 重新生成 wire：`cd backend/cmd/server && ~/go/bin/wire`。
 3. 全量验证：
 
 ```bash
