@@ -661,6 +661,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		}
 	}()
 
+	defer otokStartClaudeNonstreamKeepalive(c, reqStream)() // otok: 非流式写空白保活，防止 Cloudflare 约 125 秒断开
 	for {
 		fs := NewFailoverState(h.maxAccountSwitches, hasBoundSession)
 		retryWithFallback := false

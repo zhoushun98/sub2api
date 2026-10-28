@@ -14,6 +14,13 @@
   - 预览用 `<iframe sandbox srcdoc>` 渲染，不给任何权限，并继承站点 CSP：脚本不执行、外部资源不加载，所以默认 prompt 要求只用内联 SVG/CSS。
   - 环境变量：`OTOK_PELICAN_DISABLED=1` 关闭本实例的调度；`OTOK_PELICAN_BASE_URL` 覆盖环回地址。
   - 代码在 `service/otok_pelican_*.go`、`handler/otok_pelican_handler.go`、`frontend/src/otok/pelican.ts`、`components/otok/monitor/OtokPelicanDialog.vue`、`views/admin/otok/OtokPelicanSettingsView.vue`。
+- **Claude 非流式保活**：otokapi.com 前面的 Cloudflare 在源站约 125 秒没有任何响应时会断开（客户端收到 524）。非流式请求要等上游生成完才有响应，长输出经常超时；断开后网关不记账、不扣用户费，但上游照样跑完并向我们扣费。
+  - 做法：`/v1/messages` 的非流式请求等上游超过 45 秒后，先回 200 头，再每 45 秒写一个空白（JSON 允许前导空白），最终正文仍是一份完整 JSON。45 秒内完成的请求完全不受影响；流式请求不走这里（上游已有 `gateway.stream_keepalive_interval`）。
+  - 心跳字节不计入 `Size()` / `Written()`，handler 里「已写出内容则不再切换账号」等上游判断照常工作，心跳期间上游失败仍会切换账号。
+  - 代价：心跳开始后状态码固定为 200，之后的错误以 200 + 错误 JSON 返回（与上游生图 JSON 保活的取舍相同）；同时按非流式带内错误标记给 ops，错误日志里的状态码、错误类型与关闭保活时一致。
+  - 只覆盖 Anthropic 平台分组的 `/v1/messages`；OpenAI 的非流式请求也会被 125 秒断开，但网关对上游走流式，断开后上游即停止生成，不会多扣费。
+  - 环境变量：`OTOK_CLAUDE_NONSTREAM_KEEPALIVE_SECONDS` 调整间隔（5～90 秒，默认 45），设为 `0` 关闭。
+  - 代码在 `handler/otok_claude_nonstream_keepalive.go`，钩子在 `gateway_handler.go` 的 `Messages`。
 - **禁用后台「在线更新」**：定制版只能通过镜像升级，防止被官方二进制覆盖。
 - **GHCR 自动构建镜像**：`.github/workflows/otok-image.yml`。
 
@@ -86,7 +93,7 @@ export GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30
 git fetch upstream --tags
 git checkout main && git merge --ff-only upstream/main && git push origin main   # 可选：更新镜像分支
 git checkout otok
-git merge v0.2.18            # 换成要同步的官方 tag
+git merge v0.2.19            # 换成要同步的官方 tag（实际合并 tag 之后的 VERSION 同步提交，见下文）
 ```
 
 上游的 `VERSION` 是在打 tag **之后**才由 `chore: sync VERSION to <版本> [skip ci]` 提交同步的，tag 本身的 `VERSION` 还是上一版。发版时 CI 要求 tag 里的上游版本等于 `VERSION`，所以实际合并的是 tag 之后这一条同步提交（`git log --oneline v<新版本>..upstream/main` 找到它，确认它和 tag 之间没有别的提交），不要手改 `VERSION`。

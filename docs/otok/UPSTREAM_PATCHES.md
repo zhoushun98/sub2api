@@ -5,7 +5,7 @@
 同步上游起冲突时，先以官方代码为准解决冲突，再按本表逐条把钩子补回去。
 
 - 用 `git grep -n "otok" -- ':!docs' ':!*otok*'` 可以快速核对钩子是否都在。
-- 基线：v0.2.18（`5c185c5c5`，即 tag 之后的 VERSION 同步提交）。
+- 基线：v0.2.19（`a9240d501`，即 tag 之后的 VERSION 同步提交）。
 
 ## 后端
 
@@ -21,6 +21,7 @@
 | `backend/internal/handler/handler.go` | `Handlers` 结构体末尾 | `Otok *OtokHandlers` | 挂载 fork handler |
 | `backend/internal/handler/wire.go` | `ProvideSystemHandler` | `admin.NewSystemHandler(newOtokUpdateGuard(updateService), lockService)` | 禁用在线更新和回滚 |
 | 同上 | `ProvideHandlers` 参数末尾和返回值 | 新增 `otokHandlers *OtokHandlers` 参数与 `Otok: otokHandlers` 字段 | wire 注入 |
+| `backend/internal/handler/gateway_handler.go` | `Messages`，Anthropic 分支 `for {` 主循环之前 | `defer otokStartClaudeNonstreamKeepalive(c, reqStream)()` | Claude 非流式请求等上游超过 45 秒后先回 200 并定期写空白，防止 Cloudflare 约 125 秒断开（断开后上游照扣费）。心跳不计入 `Size()` / `Written()`，失败切换等上游判断不变；实现在 `handler/otok_claude_nonstream_keepalive.go` |
 | `backend/internal/server/router.go` | `registerRoutes`，`RegisterPaymentRoutes` 之后 | `routes.RegisterOtokRoutes(...)` | 注册 fork 接口（USDT、联系我们、降智检测） |
 | `backend/cmd/server/wire.go` | `wire.Build` | 加入 `service.OtokProviderSet`、`handler.OtokProviderSet` | wire 注入 |
 | 同上 | `provideCleanup` 参数末尾 | `otokUSDT *service.OtokUSDTService` | 优雅停机 |
