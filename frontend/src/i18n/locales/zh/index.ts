@@ -1,4 +1,5 @@
 import adminAccessKeys from './adminAccessKeys'
+import mcp from './mcp'
 import landing from './landing'
 import common from './common'
 import dashboard from './dashboard'
@@ -11,6 +12,7 @@ import { otokMergeLocale } from '../../../otok/i18nMerge' // otok
 
 export default otokMergeLocale({ // otok: 深合并 fork 文案，避免浅展开覆盖 payment 等对象
   adminAccessKeys,
+  mcp,
   ...landing,
   ...common,
   ...dashboard,
