@@ -42,6 +42,7 @@
 | --- | --- | --- | --- |
 | `.github/workflows/backend-ci.yml` | `on:` | `push` + `pull_request` 改为 `push: tags: ['otok-v*']` + `workflow_dispatch` | 只在打 tag 或手动时跑，推送 `otok` 分支不触发 |
 | `.github/workflows/security-scan.yml` | `on:` | `push` + `pull_request` + 每周 `schedule` 改为 `push: tags: ['otok-v*']` + `workflow_dispatch` | 同上 |
+| `backend/go.mod`、`Dockerfile`、`backend-ci.yml`（2 处）、`security-scan.yml`、`release.yml` | Go 版本号 | `1.27.3` 改为 `1.27.4`（**改写了上游 6 行**） | 修复标准库漏洞 GO-2026-6859（`net/http` 的 `MaxBytesReader` 并发写 header 可致进程崩溃）。上游跟进同一版本时合并无冲突，届时删除本行 |
 
 ## 前端
 
