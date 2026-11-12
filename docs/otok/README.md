@@ -21,6 +21,11 @@
   - 只覆盖 Anthropic 平台分组的 `/v1/messages`；OpenAI 的非流式请求也会被 125 秒断开，但网关对上游走流式，断开后上游即停止生成，不会多扣费。
   - 环境变量：`OTOK_CLAUDE_NONSTREAM_KEEPALIVE_SECONDS` 调整间隔（5～90 秒，默认 45），设为 `0` 关闭。
   - 代码在 `handler/otok_claude_nonstream_keepalive.go`，钩子在 `gateway_handler.go` 的 `Messages`。
+- **识别中转上游的加密上下文失效报错**：同一个 Codex 会话中途换到另一家上游（故障转移或调度换号）时，请求里带的 `reasoning.encrypted_content` 是原来那家生成的，新上游解不开。上游代码只在收到 `code=invalid_encrypted_content` 时才会剥掉密文、同号重试一次，并记下这个会话里失效的密文（之后的请求直接剥掉），而部分中转上游换了写法，于是 400 被原样透传，用户在 Codex 里看到任务做到一半就报错。
+  - fork 把两种写法也当成同一类错误：`code=encrypted_context_invalid`（`could not validate encrypted continuation context`），以及 `code=invalid_request` 加笼统文案 `The request could not be processed. Please check the request parameters.`。
+  - 后一种含义不明确，但只有请求里确实带了加密推理 / compaction 项时才会重试；判断错了的代价是多一次很快返回的 400，以及该会话之后不再带这批密文。
+  - 只接了 HTTP 路径（线上 OpenAI 账号都不走 WS）。`Encrypted function output…`、`amsg_*` 条目、tool history 之类的密文报错不在现有剥离范围内，没有处理。
+  - 代码在 `service/otok_encrypted_context.go`，钩子在 `openai_gateway_forward.go` 的 `Forward`。
 - **禁用后台「在线更新」**：定制版只能通过镜像升级，防止被官方二进制覆盖。
 - **GHCR 自动构建镜像**：`.github/workflows/otok-image.yml`。
 
