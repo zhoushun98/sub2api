@@ -15,12 +15,18 @@
   - 环境变量：`OTOK_PELICAN_DISABLED=1` 关闭本实例的调度；`OTOK_PELICAN_BASE_URL` 覆盖环回地址。
   - 代码在 `service/otok_pelican_*.go`、`handler/otok_pelican_handler.go`、`frontend/src/otok/pelican.ts`、`components/otok/monitor/OtokPelicanDialog.vue`、`views/admin/otok/OtokPelicanSettingsView.vue`。
 - **Claude 非流式保活**：otokapi.com 前面的 Cloudflare 在源站约 125 秒没有任何响应时会断开（客户端收到 524）。非流式请求要等上游生成完才有响应，长输出经常超时；断开后网关不记账、不扣用户费，但上游照样跑完并向我们扣费。
-  - 做法：`/v1/messages` 的非流式请求等上游超过 45 秒后，先回 200 头，再每 45 秒写一个空白（JSON 允许前导空白），最终正文仍是一份完整 JSON。45 秒内完成的请求完全不受影响；流式请求不走这里（上游已有 `gateway.stream_keepalive_interval`）。
+  - 做法：`/v1/messages` 的非流式请求等上游超过 45 秒后，先回 200 头，再每 45 秒写一个空白（JSON 允许前导空白），最终正文仍是一份完整 JSON。45 秒内完成的请求完全不受影响；流式请求见下一条。
   - 心跳字节不计入 `Size()` / `Written()`，handler 里「已写出内容则不再切换账号」等上游判断照常工作，心跳期间上游失败仍会切换账号。
   - 代价：心跳开始后状态码固定为 200，之后的错误以 200 + 错误 JSON 返回（与上游生图 JSON 保活的取舍相同）；同时按非流式带内错误标记给 ops，错误日志里的状态码、错误类型与关闭保活时一致。
   - 只覆盖 Anthropic 平台分组的 `/v1/messages`；OpenAI 的非流式请求也会被 125 秒断开，但网关对上游走流式，断开后上游即停止生成，不会多扣费。
   - 环境变量：`OTOK_CLAUDE_NONSTREAM_KEEPALIVE_SECONDS` 调整间隔（5～90 秒，默认 45），设为 `0` 关闭。
   - 代码在 `handler/otok_claude_nonstream_keepalive.go`，钩子在 `gateway_handler.go` 的 `Messages`。
+- **Claude 流式保活（等上游响应头阶段）**：上游自带的流式心跳只在等并发槽时和上游开始回流之后生效；从发出上游请求到收到响应头之间网关不写任何字节，上游排队或卡住超过约 120 秒时 Cloudflare 直接给客户端回 524（nginx 记 499、`rt≈125`、`resp_bytes=0`）。2026-11-13 一天约 100 条，主要是 ZY-Claude满分，这类请求不记账、不扣用户费。
+  - 做法：`/v1/messages` 的流式请求等上游响应头超过 45 秒后，先回 200 + `text/event-stream`，再每 45 秒写一个 Anthropic 标准的 `event: ping`。handler 或上游一开始写真实内容就停止心跳（之后由上游的 `gateway.stream_keepalive_interval` 接手），所有写入在同一把锁下串行，心跳不会插进事件中间。45 秒内拿到响应头的请求完全不受影响。
+  - 心跳字节同样不计入 `Size()` / `Written()`，心跳期间上游失败仍会切换账号；等并发槽时 concurrency helper 写的 ping 照常放行、不停心跳。
+  - 代价：心跳开始后状态码固定为 200，之后 handler 要返回的 4xx/5xx JSON 错误就地改写成 `event: error` 帧（`{"type":"error","error":{...}}`），并作为流内错误标记给 ops，错误日志里的状态码、错误类型、消息与关闭保活时一致。客户端拿到的是流内错误而不是 HTTP 5xx，SDK 不一定会自动重试。
+  - 环境变量：`OTOK_CLAUDE_STREAM_KEEPALIVE_SECONDS` 调整间隔（5～90 秒，默认 45），设为 `0` 关闭。
+  - 代码在 `handler/otok_claude_stream_keepalive.go`，与非流式保活共用 `gateway_handler.go` 的同一行钩子 `otokStartClaudeKeepalive`。
 - **识别中转上游的加密上下文失效报错**：同一个 Codex 会话中途换到另一家上游（故障转移或调度换号）时，请求里带的 `reasoning.encrypted_content` 是原来那家生成的，新上游解不开。上游代码只在收到 `code=invalid_encrypted_content` 时才会剥掉密文、同号重试一次，并记下这个会话里失效的密文（之后的请求直接剥掉），而部分中转上游换了写法，于是 400 被原样透传，用户在 Codex 里看到任务做到一半就报错。
   - fork 把两种写法也当成同一类错误：`code=encrypted_context_invalid`（`could not validate encrypted continuation context`），以及 `code=invalid_request` 加笼统文案 `The request could not be processed. Please check the request parameters.`。
   - 后一种含义不明确，但只有请求里确实带了加密推理 / compaction 项时才会重试；判断错了的代价是多一次很快返回的 400，以及该会话之后不再带这批密文。

@@ -151,9 +151,10 @@ func TestOtokClaudeNonstreamKeepaliveInterval(t *testing.T) {
 // ---- 经真实 Messages handler 与 HTTP 连接的端到端验证 ----
 
 type otokSlowUpstreamReply struct {
-	delay  time.Duration
-	status int
-	body   string
+	delay       time.Duration
+	status      int
+	body        string
+	contentType string // 为空时是 application/json
 }
 
 // otokSlowAnthropicUpstream 按账号返回延迟响应，模拟生成很久的非流式上游。
@@ -177,9 +178,13 @@ func (u *otokSlowAnthropicUpstream) Do(req *http.Request, _ string, accountID in
 	case <-req.Context().Done():
 		return nil, req.Context().Err()
 	}
+	contentType := reply.contentType
+	if contentType == "" {
+		contentType = "application/json"
+	}
 	return &http.Response{
 		StatusCode: reply.status,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Header:     http.Header{"Content-Type": []string{contentType}},
 		Body:       io.NopCloser(strings.NewReader(reply.body)),
 		Request:    req,
 	}, nil
@@ -202,7 +207,9 @@ type otokKeepaliveAccountRepoStub struct {
 func (otokKeepaliveAccountRepoStub) SetTempUnschedulable(context.Context, int64, time.Time, string) error {
 	return nil
 }
-func (otokKeepaliveAccountRepoStub) SetOverloaded(context.Context, int64, time.Time) error { return nil }
+func (otokKeepaliveAccountRepoStub) SetOverloaded(context.Context, int64, time.Time) error {
+	return nil
+}
 func (otokKeepaliveAccountRepoStub) SetModelRateLimit(context.Context, int64, string, time.Time, ...string) error {
 	return nil
 }
@@ -220,6 +227,10 @@ func newOtokKeepaliveFixture(t *testing.T, interval time.Duration, replies map[i
 	prev := otokClaudeNonstreamKeepaliveIntervalFunc
 	otokClaudeNonstreamKeepaliveIntervalFunc = func() time.Duration { return interval }
 	t.Cleanup(func() { otokClaudeNonstreamKeepaliveIntervalFunc = prev })
+	// 流式保活默认关闭，需要的测试在拿到 fixture 后再打开。
+	prevStream := otokClaudeStreamKeepaliveIntervalFunc
+	otokClaudeStreamKeepaliveIntervalFunc = func() time.Duration { return 0 }
+	t.Cleanup(func() { otokClaudeStreamKeepaliveIntervalFunc = prevStream })
 
 	groupID := int64(9600)
 	group := &service.Group{ID: groupID, Hydrated: true, Platform: service.PlatformAnthropic, Status: service.StatusActive}
