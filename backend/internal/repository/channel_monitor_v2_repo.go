@@ -39,6 +39,7 @@ func (r *channelMonitorV2Repository) GetConfig(ctx context.Context) (*service.Ch
 	if err := json.Unmarshal(platforms, &cfg.Platforms); err != nil {
 		return nil, fmt.Errorf("decode channel monitor v2 platforms: %w", err)
 	}
+	cfg.GroupIDs = otokLiveChannelMonitorV2GroupIDs(ctx, r.db, cfg.GroupIDs) // otok
 	if cfg.IgnoredErrorCategories == nil {
 		cfg.IgnoredErrorCategories = []string{}
 	}
@@ -55,6 +56,7 @@ func (r *channelMonitorV2Repository) UpdateConfig(ctx context.Context, cfg servi
 	if err != nil {
 		return nil, err
 	}
+	cfg.GroupIDs = otokLiveChannelMonitorV2GroupIDs(ctx, r.db, cfg.GroupIDs) // otok
 	if cfg.IgnoredErrorCategories == nil {
 		cfg.IgnoredErrorCategories = []string{}
 	}

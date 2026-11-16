@@ -23,6 +23,7 @@
 | 同上 | `ProvideHandlers` 参数末尾和返回值 | 新增 `otokHandlers *OtokHandlers` 参数与 `Otok: otokHandlers` 字段 | wire 注入 |
 | `backend/internal/handler/gateway_handler.go` | `Messages`，Anthropic 分支 `for {` 主循环之前 | `defer otokStartClaudeKeepalive(c, reqStream)()` | Claude 请求等上游超过 45 秒后先回 200 并定期写心跳，防止 Cloudflare 约 120 秒断开：非流式写空白（断开后上游照扣费），流式在拿到上游响应头之前写 SSE `event: ping`（否则客户端收到 524）。心跳不计入 `Size()` / `Written()`，失败切换等上游判断不变；实现在 `handler/otok_claude_nonstream_keepalive.go`、`handler/otok_claude_stream_keepalive.go` |
 | `backend/internal/service/openai_gateway_forward.go` | `Forward` 的 HTTP 错误处理，`invalidEncryptedContentError :=` 的 `\|\|` 条件里 | 加一行 `otokIsInvalidEncryptedContextError(upstreamCode, upstreamMsg) \|\|` | 中转上游用 `encrypted_context_invalid` 或笼统的 `invalid_request` 报告加密上下文失效时，同样走上游的「剥掉密文、同号重试一次并记入失效列表」；实现在 `service/otok_encrypted_context.go` |
+| `backend/internal/repository/channel_monitor_v2_repo.go` | `GetConfig` 扫描完成之后、`UpdateConfig` 序列化 `platforms` 之后 | 各加一行 `cfg.GroupIDs = otokLiveChannelMonitorV2GroupIDs(ctx, r.db, cfg.GroupIDs)` | 读写渠道监控 V2 配置时剔除已删除分组：上游删分组不清理 `group_ids`，设置面板又只列现存分组，残留的 id 取消不掉，已删除分组的卡片会一直留在渠道状态页（管理员视角）。勾选的分组全被删光时保留原值（空列表 = 全部分组）；实现在 `repository/otok_channel_monitor_v2.go` |
 | `backend/internal/server/router.go` | `registerRoutes`，`RegisterPaymentRoutes` 之后 | `routes.RegisterOtokRoutes(...)` | 注册 fork 接口（USDT、联系我们、降智检测） |
 | `backend/cmd/server/wire.go` | `wire.Build` | 加入 `service.OtokProviderSet`、`handler.OtokProviderSet` | wire 注入 |
 | 同上 | `provideCleanup` 参数末尾 | `otokUSDT *service.OtokUSDTService` | 优雅停机 |

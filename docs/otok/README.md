@@ -32,6 +32,7 @@
   - 后一种含义不明确，但只有请求里确实带了加密推理 / compaction 项时才会重试；判断错了的代价是多一次很快返回的 400，以及该会话之后不再带这批密文。
   - 只接了 HTTP 路径（线上 OpenAI 账号都不走 WS）。`Encrypted function output…`、`amsg_*` 条目、tool history 之类的密文报错不在现有剥离范围内，没有处理。
   - 代码在 `service/otok_encrypted_context.go`，钩子在 `openai_gateway_forward.go` 的 `Forward`。
+- **渠道监控剔除已删除分组**：上游删除分组（软删除）时不会把它从渠道监控 V2 的「监控分组」勾选（`channel_monitor_v2_config.group_ids`）里移掉；设置面板只列现存分组，残留的 id 看不到也取消不了，而 matrix 查询不过滤已删除分组、管理员视角又不按可用分组收窄，于是已删除分组的卡片一直留在渠道状态页。fork 在读、写配置时都剔掉已删除的分组 id（停用的分组保留）；勾选的分组全被删光时保留原值，因为空列表在上游表示「全部分组」。代码在 `repository/otok_channel_monitor_v2.go`，钩子在 `channel_monitor_v2_repo.go` 的 `GetConfig`、`UpdateConfig`。
 - **禁用后台「在线更新」**：定制版只能通过镜像升级，防止被官方二进制覆盖。
 - **GHCR 自动构建镜像**：`.github/workflows/otok-image.yml`。
 
