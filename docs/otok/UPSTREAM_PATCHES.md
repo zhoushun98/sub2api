@@ -5,7 +5,7 @@
 同步上游起冲突时，先以官方代码为准解决冲突，再按本表逐条把钩子补回去。
 
 - 用 `git grep -n "otok" -- ':!docs' ':!*otok*'` 可以快速核对钩子是否都在。
-- 基线：v0.2.21（`6dd5a045b`，即 tag 之后的 VERSION 同步提交）。
+- 基线：v0.2.22（`15871f904`，即 tag 之后的 VERSION 同步提交）。
 
 ## 后端
 
@@ -44,7 +44,6 @@
 | --- | --- | --- | --- |
 | `.github/workflows/backend-ci.yml` | `on:` | `push` + `pull_request` 改为 `push: tags: ['otok-v*']` + `workflow_dispatch` | 只在打 tag 或手动时跑，推送 `otok` 分支不触发 |
 | `.github/workflows/security-scan.yml` | `on:` | `push` + `pull_request` + 每周 `schedule` 改为 `push: tags: ['otok-v*']` + `workflow_dispatch` | 同上 |
-| `backend/go.mod`、`Dockerfile`、`backend-ci.yml`（2 处）、`security-scan.yml`、`release.yml` | Go 版本号 | `1.27.3` 改为 `1.27.4`（**改写了上游 6 行**） | 修复标准库漏洞 GO-2026-6859（`net/http` 的 `MaxBytesReader` 并发写 header 可致进程崩溃）。上游跟进同一版本时合并无冲突，届时删除本行 |
 
 ## 前端
 
