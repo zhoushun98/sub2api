@@ -5,7 +5,7 @@
 同步上游起冲突时，先以官方代码为准解决冲突，再按本表逐条把钩子补回去。
 
 - 用 `git grep -n "otok" -- ':!docs' ':!*otok*'` 可以快速核对钩子是否都在。
-- 基线：v0.2.23（`2af3f1e15`，即 tag 之后的 VERSION 同步提交）。
+- 基线：v0.2.24（`328db26f4`，即 tag 之后的 VERSION 同步提交）。
 
 ## 后端
 
@@ -73,7 +73,6 @@
 | `frontend/src/i18n/locales/zh/index.ts`、`en/index.ts` | import 与 `export default` | `export default otokMergeLocale({ ...上游原样... }, otok)`（**改写了 2 行**） | 深合并 fork 文案。上游是浅展开，直接 `...otok` 会整块覆盖 `payment` 等对象 |
 | `frontend/src/views/user/ChannelStatusView.vue` | V2 分支与 import | `<ChannelStatusV2View v-else />` 换成 `<OtokChannelStatusCardsView v-else />`，import 同步替换（**改写了上游 2 行**） | V2 模式下用户侧「渠道状态」改用 otok 卡片页。上游 `ChannelStatusV2View.vue` 本身未改动，还原这 2 行即可恢复 |
 | `frontend/src/views/user/__tests__/ChannelStatusView.mode.spec.ts` | V2 视图的 mock | mock 目标改为 `../otok/OtokChannelStatusCardsView.vue` | 适配上面的钩子 |
-| `frontend/src/views/admin/__tests__/groupsOpenAIFast.spec.ts` | `provides localized Ultra Fast switch labels…` 用例 | `ultrafastHint` 的断言 `stringContaining("service_tier=ultrafast")` 改为 `stringContaining("GPT-6.2")`（**改写了上游 1 行**，临时） | 上游 v0.2.23 的 #8906 改写了 `ultrafastHint` 文案、去掉了 `service_tier=ultrafast`，但没更新这条断言，上游自己的全量 vitest 也挂；`otok image` 构建跑全量 `test:run`，不改就发不了版。上游修好后合并时直接取上游版本，并删掉本行 |
 
 说明：上游的 `components/admin/payment/AdminOrderDetail.vue` 当前没有被任何页面使用（后台订单详情是 `AdminOrdersView.vue` 内联的弹窗），所以没有改它。上游以后如果改用这个组件，需要把 `OtokUsdtOrderInfo` 移过去。
 
