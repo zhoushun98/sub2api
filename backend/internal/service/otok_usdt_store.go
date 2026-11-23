@@ -52,6 +52,8 @@ const (
 	otokSourceWatcher = "watcher"
 	otokSourceUser    = "user"
 	otokSourceAdmin   = "admin"
+	// otokSourceBinance：来自币安充值记录（链上充值或链下转账），入账时向币安复核。
+	otokSourceBinance = "binance"
 )
 
 type otokUSDTReservation struct {
@@ -116,20 +118,25 @@ type otokUSDTTransfer struct {
 	// LastError 是最近一次入账复核失败的原因，复核成功后清空。
 	LastError   string
 	LastErrorAt sql.NullTime
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// ExternalID 为币安充值记录 id（仅 source = binance）。
+	ExternalID string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
+
+// FromBinance 报告这条转账是否来自币安充值记录。
+func (t *otokUSDTTransfer) FromBinance() bool { return t.Source == otokSourceBinance }
 
 const otokTransferColumns = `id, network, tx_hash, log_index, block_number, block_hash, block_time, from_address,
 	to_address_norm, token_contract, amount_raw::text, decimals, order_id, source, status, note, credit_attempts,
-	amount_override, last_error, last_error_at, created_at, updated_at`
+	amount_override, last_error, last_error_at, external_id, created_at, updated_at`
 
 func scanOtokTransfer(rows *sql.Rows) (*otokUSDTTransfer, error) {
 	var t otokUSDTTransfer
 	var network, amount string
 	if err := rows.Scan(&t.ID, &network, &t.TxHash, &t.LogIndex, &t.BlockNumber, &t.BlockHash, &t.BlockTime, &t.FromAddress,
 		&t.ToAddressNorm, &t.TokenContract, &amount, &t.Decimals, &t.OrderID, &t.Source, &t.Status, &t.Note, &t.CreditAttempts,
-		&t.AmountOverride, &t.LastError, &t.LastErrorAt, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		&t.AmountOverride, &t.LastError, &t.LastErrorAt, &t.ExternalID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return nil, err
 	}
 	t.Network = otokchain.Network(network)
@@ -318,6 +325,29 @@ func otokUpsertTransfer(ctx context.Context, ex otokExecutor, t otokchain.Transf
 		RETURNING `+otokTransferColumns,
 		string(t.Network), t.TxHash, t.LogIndex, t.BlockNumber, t.BlockHash, blockTime, t.From, t.ToNorm,
 		tokenContract, t.Amount.String(), decimals, source)
+}
+
+// otokUpsertBinanceTransfer 按币安充值 id 幂等记录一笔转账。已存在时不改任何字段（含 updated_at）：
+// 每轮轮询都会重复写入，刷新 updated_at 会打乱 credit_failed 的退避和「消失后解绑」的计时。
+func otokUpsertBinanceTransfer(ctx context.Context, ex otokExecutor, t otokchain.Transfer, externalID, tokenContract string, decimals int32) (*otokUSDTTransfer, error) {
+	if externalID == "" {
+		return nil, fmt.Errorf("binance deposit id is required")
+	}
+	if row, err := otokQueryOne(ctx, ex, scanOtokTransfer, `SELECT `+otokTransferColumns+` FROM otok_usdt_transfers
+		WHERE source = $1 AND external_id = $2`, otokSourceBinance, externalID); err != nil || row != nil {
+		return row, err
+	}
+	var blockTime any
+	if !t.BlockTime.IsZero() {
+		blockTime = t.BlockTime
+	}
+	return otokQueryOne(ctx, ex, scanOtokTransfer, `INSERT INTO otok_usdt_transfers (network, tx_hash, log_index,
+		block_number, block_hash, block_time, from_address, to_address_norm, token_contract, amount_raw, decimals, source, external_id)
+		VALUES ($1, $2, $3, 0, '', $4, $5, $6, $7, $8::numeric, $9, $10, $11)
+		ON CONFLICT (source, external_id) WHERE external_id <> '' DO UPDATE SET external_id = EXCLUDED.external_id
+		RETURNING `+otokTransferColumns,
+		string(t.Network), t.TxHash, t.LogIndex, blockTime, t.From, t.ToNorm,
+		tokenContract, t.Amount.String(), decimals, otokSourceBinance, externalID)
 }
 
 func otokGetTransfer(ctx context.Context, ex otokExecutor, id int64) (*otokUSDTTransfer, error) {

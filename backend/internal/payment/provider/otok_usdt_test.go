@@ -34,6 +34,27 @@ func TestParseOtokUSDTConfigDefaults(t *testing.T) {
 	require.Equal(t, []payment.PaymentType{payment.TypeOtokUSDTTRC20, payment.TypeOtokUSDTPolygon}, cfg.PaymentTypes())
 	require.Equal(t, "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", cfg.Addresses[otokchain.NetworkPolygon].Norm)
 	require.Equal(t, otokTestEVMAddress, cfg.Addresses[otokchain.NetworkPolygon].Display)
+	require.Equal(t, OtokUSDTSourceChain, cfg.DepositSource, "旧配置没有 depositSource，必须保持链上模式")
+	require.False(t, cfg.UsesBinance())
+}
+
+func TestParseOtokUSDTConfigDepositSource(t *testing.T) {
+	c := otokValidConfig()
+	c[OtokUSDTConfigDepositSource] = " Binance "
+	c[OtokUSDTConfigBinanceAPIKey] = " key "
+	c[OtokUSDTConfigBinanceAPISecret] = "secret"
+	cfg, err := ParseOtokUSDTConfig(c)
+	require.NoError(t, err)
+	require.True(t, cfg.UsesBinance())
+	require.Equal(t, "key", cfg.BinanceAPIKey)
+	require.Equal(t, "secret", cfg.BinanceAPISecret)
+
+	// 链上模式下填了币安 key 也不启用币安。
+	c[OtokUSDTConfigDepositSource] = OtokUSDTSourceChain
+	cfg, err = ParseOtokUSDTConfig(c)
+	require.NoError(t, err)
+	require.False(t, cfg.UsesBinance())
+	require.Equal(t, "key", cfg.BinanceAPIKey)
 }
 
 func TestParseOtokUSDTConfigRejectsInvalid(t *testing.T) {
@@ -55,6 +76,15 @@ func TestParseOtokUSDTConfigRejectsInvalid(t *testing.T) {
 		"grace not integer": func(c map[string]string) { c[OtokUSDTConfigGraceMinutes] = "abc" },
 		"usdt contract addr": func(c map[string]string) {
 			c[OtokUSDTConfigERC20Address] = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+		},
+		"unknown source": func(c map[string]string) { c[OtokUSDTConfigDepositSource] = "okx" },
+		"binance without secret": func(c map[string]string) {
+			c[OtokUSDTConfigDepositSource] = OtokUSDTSourceBinance
+			c[OtokUSDTConfigBinanceAPIKey] = "key"
+		},
+		"binance without key": func(c map[string]string) {
+			c[OtokUSDTConfigDepositSource] = OtokUSDTSourceBinance
+			c[OtokUSDTConfigBinanceAPISecret] = "secret"
 		},
 	}
 	for name, mutate := range cases {

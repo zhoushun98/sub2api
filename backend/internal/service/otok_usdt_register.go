@@ -14,7 +14,7 @@ func init() {
 	auditBodySensitiveSubstrings = append(auditBodySensitiveSubstrings, "rpcurl")
 	validProviderKeys[payment.TypeOtokUSDT] = true
 	providerSensitiveConfigFields[payment.TypeOtokUSDT] = map[string]struct{}{
-		"trongridapikey": {},
+		"trongridapikey": {}, "binanceapikey": {}, "binanceapisecret": {},
 	}
 	providerPendingOrderProtectedConfigFields[payment.TypeOtokUSDT] = map[string]struct{}{
 		"trc20address": {}, "bep20address": {}, "polygonaddress": {}, "erc20address": {},

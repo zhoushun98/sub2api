@@ -106,6 +106,11 @@ func (s *OtokUSDTService) RunOnce(ctx context.Context) error {
 }
 
 func (s *OtokUSDTService) scanAndMatch(ctx context.Context, reservations []*otokUSDTReservation) {
+	// 同一时间只允许一个启用实例；数据源取最新预留所属实例的配置。
+	if ucfg := s.instanceConfig(ctx, reservations[len(reservations)-1].InstanceID); ucfg.UsesBinance() {
+		s.scanBinance(ctx, ucfg, reservations)
+		return
+	}
 	byNetwork := map[otokchain.Network][]*otokUSDTReservation{}
 	for _, r := range reservations {
 		byNetwork[r.Network] = append(byNetwork[r.Network], r)

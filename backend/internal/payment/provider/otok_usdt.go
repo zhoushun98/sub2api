@@ -27,6 +27,16 @@ const (
 	OtokUSDTConfigPolygonRPCURL  = "polygonRpcUrl"
 	OtokUSDTConfigExpireMinutes  = "expireMinutes"
 	OtokUSDTConfigGraceMinutes   = "graceMinutes"
+	// 到账数据源与币安只读 API（见 docs/otok/USDT_PAYMENT.md「到账数据源」）。
+	OtokUSDTConfigDepositSource    = "depositSource"
+	OtokUSDTConfigBinanceAPIKey    = "binanceApiKey"
+	OtokUSDTConfigBinanceAPISecret = "binanceApiSecret"
+)
+
+// 到账数据源：chain 为链上节点（TronGrid / EVM RPC），binance 为币安充值记录（含链下转账）。
+const (
+	OtokUSDTSourceChain   = "chain"
+	OtokUSDTSourceBinance = "binance"
 )
 
 const (
@@ -60,6 +70,10 @@ type OtokUSDTConfig struct {
 	RPCURLs        map[otokchain.Network]string
 	ExpireMinutes  int
 	GraceMinutes   int
+	// DepositSource 为 OtokUSDTSourceChain 或 OtokUSDTSourceBinance，缺省为 chain。
+	DepositSource    string
+	BinanceAPIKey    string
+	BinanceAPISecret string
 }
 
 func parseOptionalMinutes(cfg map[string]string, key string, def, min int) (int, error) {
@@ -80,6 +94,9 @@ func ParseOtokUSDTConfig(cfg map[string]string) (*OtokUSDTConfig, error) {
 		Addresses:      map[otokchain.Network]otokchain.Address{},
 		RPCURLs:        map[otokchain.Network]string{},
 		TronGridAPIKey: strings.TrimSpace(cfg[OtokUSDTConfigTronGridAPIKey]),
+	}
+	if err := out.parseDepositSource(cfg); err != nil {
+		return nil, err
 	}
 	rate, err := decimal.NewFromString(strings.TrimSpace(cfg[OtokUSDTConfigExchangeRate]))
 	if err != nil || !rate.IsPositive() || rate.GreaterThan(decimal.NewFromInt(100000)) {
@@ -126,6 +143,30 @@ func ParseOtokUSDTConfig(cfg map[string]string) (*OtokUSDTConfig, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// parseDepositSource 解析到账数据源；选择币安时 API key 与 secret 必填。
+func (c *OtokUSDTConfig) parseDepositSource(cfg map[string]string) error {
+	c.BinanceAPIKey = strings.TrimSpace(cfg[OtokUSDTConfigBinanceAPIKey])
+	c.BinanceAPISecret = strings.TrimSpace(cfg[OtokUSDTConfigBinanceAPISecret])
+	switch src := strings.ToLower(strings.TrimSpace(cfg[OtokUSDTConfigDepositSource])); src {
+	case "", OtokUSDTSourceChain:
+		c.DepositSource = OtokUSDTSourceChain
+	case OtokUSDTSourceBinance:
+		if c.BinanceAPIKey == "" || c.BinanceAPISecret == "" {
+			return fmt.Errorf("%s and %s are required when %s is %s",
+				OtokUSDTConfigBinanceAPIKey, OtokUSDTConfigBinanceAPISecret, OtokUSDTConfigDepositSource, OtokUSDTSourceBinance)
+		}
+		c.DepositSource = OtokUSDTSourceBinance
+	default:
+		return fmt.Errorf("%s must be %s or %s", OtokUSDTConfigDepositSource, OtokUSDTSourceChain, OtokUSDTSourceBinance)
+	}
+	return nil
+}
+
+// UsesBinance 报告是否以币安充值记录作为到账数据源。
+func (c *OtokUSDTConfig) UsesBinance() bool {
+	return c != nil && c.DepositSource == OtokUSDTSourceBinance
 }
 
 // PaymentTypes 返回已配置收款地址的网络对应的支付类型。

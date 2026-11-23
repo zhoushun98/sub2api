@@ -51,6 +51,8 @@ type OtokUSDTService struct {
 	evmClients  map[string]*otokchain.EVMClient
 	tronClients map[string]*otokchain.TronClient
 	evmChunks   map[otokchain.Network]int64
+	// binanceClients 按（代理, 接口地址, key, secret）缓存。
+	binanceClients map[string]*otokchain.BinanceClient
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -60,14 +62,15 @@ type OtokUSDTService struct {
 // NewOtokUSDTService 创建服务；interval ≤ 0 时不启动后台监听。
 func NewOtokUSDTService(paymentSvc *PaymentService, entClient *dbent.Client, interval time.Duration) *OtokUSDTService {
 	return &OtokUSDTService{
-		paymentSvc:  paymentSvc,
-		entClient:   entClient,
-		instanceID:  uuid.NewString(),
-		interval:    interval,
-		evmClients:  map[string]*otokchain.EVMClient{},
-		tronClients: map[string]*otokchain.TronClient{},
-		evmChunks:   map[otokchain.Network]int64{},
-		stopCh:      make(chan struct{}),
+		paymentSvc:     paymentSvc,
+		entClient:      entClient,
+		instanceID:     uuid.NewString(),
+		interval:       interval,
+		evmClients:     map[string]*otokchain.EVMClient{},
+		tronClients:    map[string]*otokchain.TronClient{},
+		evmChunks:      map[otokchain.Network]int64{},
+		binanceClients: map[string]*otokchain.BinanceClient{},
+		stopCh:         make(chan struct{}),
 	}
 }
 
@@ -153,15 +156,24 @@ func (s *OtokUSDTService) instanceConfig(ctx context.Context, instanceID string)
 	}
 	cfg, err := provider.ParseOtokUSDTConfig(raw)
 	if err != nil {
-		// 地址被清空等情况下仍尽量沿用 API key / RPC 配置。
-		return &provider.OtokUSDTConfig{
+		// 地址被清空等情况下仍尽量沿用 API key / RPC / 币安配置。
+		fallback := &provider.OtokUSDTConfig{
 			TronGridAPIKey: strings.TrimSpace(raw[provider.OtokUSDTConfigTronGridAPIKey]),
 			RPCURLs: map[otokchain.Network]string{
 				otokchain.NetworkERC20:   strings.TrimSpace(raw[provider.OtokUSDTConfigETHRPCURL]),
 				otokchain.NetworkBEP20:   strings.TrimSpace(raw[provider.OtokUSDTConfigBSCRPCURL]),
 				otokchain.NetworkPolygon: strings.TrimSpace(raw[provider.OtokUSDTConfigPolygonRPCURL]),
 			},
+			Addresses:        map[otokchain.Network]otokchain.Address{},
+			DepositSource:    provider.OtokUSDTSourceChain,
+			BinanceAPIKey:    strings.TrimSpace(raw[provider.OtokUSDTConfigBinanceAPIKey]),
+			BinanceAPISecret: strings.TrimSpace(raw[provider.OtokUSDTConfigBinanceAPISecret]),
 		}
+		if strings.EqualFold(strings.TrimSpace(raw[provider.OtokUSDTConfigDepositSource]), provider.OtokUSDTSourceBinance) &&
+			fallback.BinanceAPIKey != "" && fallback.BinanceAPISecret != "" {
+			fallback.DepositSource = provider.OtokUSDTSourceBinance
+		}
+		return fallback
 	}
 	return cfg
 }
@@ -343,7 +355,7 @@ func (s *OtokUSDTService) creditBoundTransfer(ctx context.Context, t *otokUSDTTr
 		return false, otokSetTransferStatus(ctx, s.entClient, t.ID, otokTransferReview, note, false)
 	}
 
-	check, err := s.verifyOnChain(ctx, t, s.instanceConfig(ctx, r.InstanceID))
+	check, err := s.verifyTransfer(ctx, t, s.instanceConfig(ctx, r.InstanceID))
 	if err != nil {
 		return false, err
 	}
@@ -408,7 +420,7 @@ func (s *OtokUSDTService) creditBoundTransfer(ctx context.Context, t *otokUSDTTr
 
 // otokBoundTransferMismatch 校验已绑定转账与预留是否一致，不一致时返回原因。
 func otokBoundTransferMismatch(t *otokUSDTTransfer, r *otokUSDTReservation) string {
-	if t.Network != r.Network || t.ToAddressNorm != r.ToAddressNorm {
+	if !otokTransferNetworkMatches(t, r) || t.ToAddressNorm != r.ToAddressNorm {
 		return fmt.Sprintf("transfer %s/%s does not match order %s/%s", t.Network, t.ToAddressNorm, r.Network, r.ToAddressNorm)
 	}
 	if t.AmountOverride {
@@ -516,13 +528,19 @@ func otokTransferInWindow(t otokchain.Transfer, r *otokUSDTReservation) bool {
 	return !t.BlockTime.Before(r.CreatedAt.Add(otokUSDTMinPayDelay)) && !t.BlockTime.After(r.ReservedUntil)
 }
 
+// otokTransferNetworkMatches 报告转账网络是否与订单一致。来自币安的转账不要求网络一致：
+// 钱已经进了同一个币安账户，而同一收款地址的尾差金额本来就跨网络唯一，不会串单。
+func otokTransferNetworkMatches(t *otokUSDTTransfer, r *otokUSDTReservation) bool {
+	return t.Network == r.Network || t.FromBinance()
+}
+
 // otokTransferAutoMatchable 报告一条已记录的转账能否自动（监听 / 用户提交）绑定到预留：
 // 金额精确相等、区块时间在窗口内，且在下单之后才首次被记录。
 func otokTransferAutoMatchable(row *otokUSDTTransfer, r *otokUSDTReservation) bool {
 	if row.OrderID.Valid || row.Status != otokTransferSeen || !row.BlockTime.Valid {
 		return false
 	}
-	if row.Network != r.Network || row.ToAddressNorm != r.ToAddressNorm || row.CreatedAt.Before(r.CreatedAt) {
+	if !otokTransferNetworkMatches(row, r) || row.ToAddressNorm != r.ToAddressNorm || row.CreatedAt.Before(r.CreatedAt) {
 		return false
 	}
 	if cents, exact := row.AmountCents(); !exact || cents != r.AmountCents {
@@ -559,15 +577,17 @@ func (s *OtokUSDTService) SubmitUserTx(ctx context.Context, userID, orderID int6
 	if otokOrderPaidLike(order.Status) {
 		return s.orderDetail(ctx, order, r)
 	}
-	norm, err := otokchain.NormalizeTxHash(r.Network, txHash)
+	ucfg := s.instanceConfig(ctx, r.InstanceID)
+	in, err := otokParseTxInput(r.Network, txHash, ucfg.UsesBinance())
 	if err != nil {
-		return nil, infraerrors.BadRequest("USDT_TX_INVALID", err.Error())
+		return nil, err
 	}
+	norm := in.Key
 	operator := fmt.Sprintf("user:%d", userID)
 	if existing, err := otokGetTransferByOrder(ctx, s.entClient, order.ID); err != nil {
 		return nil, err
 	} else if existing != nil {
-		if existing.TxHash != norm {
+		if !in.matches(existing) {
 			return nil, infraerrors.Conflict("USDT_ORDER_ALREADY_MATCHED", "this order is already matched with another transaction")
 		}
 		_, _ = s.creditBoundTransfer(ctx, existing, operator)
@@ -579,24 +599,38 @@ func (s *OtokUSDTService) SubmitUserTx(ctx context.Context, userID, orderID int6
 	if time.Now().After(r.ReservedUntil.Add(otokUSDTReleaseMargin)) {
 		return nil, infraerrors.BadRequest("USDT_ORDER_WINDOW_CLOSED", "the automatic confirmation window has closed; please contact support")
 	}
-	transfers, check, err := s.fetchTxTransfers(ctx, r, norm)
-	if err != nil {
-		return nil, otokChainLookupError(err)
-	}
-	if check.invalid != "" {
-		return nil, infraerrors.BadRequest("USDT_TX_FAILED", check.invalid)
-	}
-	if len(transfers) == 0 {
-		return nil, infraerrors.BadRequest("USDT_TX_WRONG_RECIPIENT", "this transaction is not a USDT transfer to the order's receiving address")
+	var rows []*otokUSDTTransfer
+	if ucfg.UsesBinance() {
+		found, err := s.lookupBinance(ctx, r, ucfg, in)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range found {
+			rows = append(rows, f.row)
+		}
+	} else {
+		transfers, check, err := s.fetchTxTransfers(ctx, r, norm)
+		if err != nil {
+			return nil, otokChainLookupError(err)
+		}
+		if check.invalid != "" {
+			return nil, infraerrors.BadRequest("USDT_TX_FAILED", check.invalid)
+		}
+		if len(transfers) == 0 {
+			return nil, infraerrors.BadRequest("USDT_TX_WRONG_RECIPIENT", "this transaction is not a USDT transfer to the order's receiving address")
+		}
+		for _, tr := range transfers {
+			row, err := otokUpsertTransfer(ctx, s.entClient, tr, r.TokenContract, r.Decimals, otokSourceUser)
+			if err != nil {
+				return nil, err
+			}
+			rows = append(rows, row)
+		}
 	}
 	var matched *otokUSDTTransfer
 	var rejected []string
 	usedByOther := false
-	for _, tr := range transfers {
-		row, err := otokUpsertTransfer(ctx, s.entClient, tr, r.TokenContract, r.Decimals, otokSourceUser)
-		if err != nil {
-			return nil, err
-		}
+	for _, row := range rows {
 		if row.OrderID.Valid {
 			usedByOther = true
 			continue
@@ -607,9 +641,13 @@ func (s *OtokUSDTService) SubmitUserTx(ctx context.Context, userID, orderID int6
 			}
 			continue
 		}
+		blockTime := ""
+		if row.BlockTime.Valid {
+			blockTime = row.BlockTime.Time.Format(time.RFC3339)
+		}
 		rejected = append(rejected, fmt.Sprintf("log %d: amount %s (expected %s), status %s, block time %s",
 			row.LogIndex, otokchain.FormatRaw(row.AmountRaw, row.Decimals), otokchain.FormatCents(r.AmountCents),
-			row.Status, tr.BlockTime.Format(time.RFC3339)))
+			row.Status, blockTime))
 	}
 	if matched == nil {
 		slog.Info("[OtokUSDT] user submitted tx did not match order", "order", order.ID, "tx", norm, "rejected", rejected)
@@ -659,17 +697,67 @@ func (s *OtokUSDTService) AdminBindTx(ctx context.Context, orderID int64, txHash
 	if order.Status == OrderStatusFailed && order.PaidAt == nil {
 		return nil, infraerrors.BadRequest("USDT_ORDER_NOT_PAYABLE", "order failed before payment; create a new order or adjust balance manually")
 	}
-	norm, err := otokchain.NormalizeTxHash(r.Network, txHash)
+	ucfg := s.instanceConfig(ctx, r.InstanceID)
+	in, err := otokParseTxInput(r.Network, txHash, ucfg.UsesBinance())
 	if err != nil {
-		return nil, infraerrors.BadRequest("USDT_TX_INVALID", err.Error())
+		return nil, err
 	}
 	existing, err := otokGetTransferByOrder(ctx, s.entClient, order.ID)
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil && existing.TxHash != norm {
+	if existing != nil && !in.matches(existing) {
 		return nil, infraerrors.Conflict("USDT_ORDER_ALREADY_MATCHED", "this order is already matched with another transaction")
 	}
+	var row *otokUSDTTransfer
+	if ucfg.UsesBinance() {
+		row, err = s.adminPickBinance(ctx, r, ucfg, in, logIndex)
+	} else {
+		row, err = s.adminPickChain(ctx, r, in.Key, logIndex)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if row.OrderID.Valid && row.OrderID.Int64 != order.ID {
+		return nil, infraerrors.Conflict("USDT_TX_ALREADY_USED", fmt.Sprintf("this transaction is already used by order %d", row.OrderID.Int64))
+	}
+	if !row.OrderID.Valid {
+		if row.Status != otokTransferSeen && row.Status != otokTransferReview && row.Status != otokTransferDropped {
+			if err := otokSetTransferStatus(ctx, s.entClient, row.ID, otokTransferReview, "", false); err != nil {
+				return nil, err
+			}
+		}
+		ok, err := s.bindTransfer(ctx, row.ID, order.ID, "admin: "+reason, true)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, infraerrors.Conflict("USDT_TX_ALREADY_USED", "this transaction has already been used")
+		}
+	}
+	s.paymentSvc.writeAuditLog(ctx, order.ID, "OTOK_USDT_ADMIN_BIND", operator, map[string]any{
+		"network": string(row.Network), "txHash": row.TxHash, "logIndex": row.LogIndex, "source": row.Source,
+		"onChainAmount": otokchain.FormatRaw(row.AmountRaw, row.Decimals), "expectedAmount": otokchain.FormatCents(r.AmountCents),
+		"reason": reason,
+	})
+	bound, err := otokGetTransfer(ctx, s.entClient, row.ID)
+	if err != nil {
+		return nil, err
+	}
+	if credited, err := s.creditBoundTransfer(ctx, bound, operator); err != nil {
+		return nil, infraerrors.ServiceUnavailable("USDT_CREDIT_FAILED", err.Error())
+	} else if !credited {
+		return nil, infraerrors.ServiceUnavailable("USDT_CREDIT_FAILED", "transaction bound but the order was not credited; check the audit log")
+	}
+	refreshed, err := s.paymentSvc.GetOrderByID(ctx, order.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.orderDetail(ctx, refreshed, r)
+}
+
+// adminPickChain 管理员补单（链上数据源）：校验交易已确认，选出转入订单地址的那笔转账并入库。
+func (s *OtokUSDTService) adminPickChain(ctx context.Context, r *otokUSDTReservation, norm string, logIndex *int64) (*otokUSDTTransfer, error) {
 	transfers, check, err := s.fetchTxTransfers(ctx, r, norm)
 	if err != nil {
 		return nil, otokChainLookupError(err)
@@ -703,46 +791,40 @@ func (s *OtokUSDTService) AdminBindTx(ctx context.Context, orderID int64, txHash
 		}
 		return nil, infraerrors.BadRequest("USDT_TX_AMBIGUOUS", "multiple transfers in this transaction; specify log_index")
 	}
-	row, err := otokUpsertTransfer(ctx, s.entClient, *pick, r.TokenContract, r.Decimals, otokSourceAdmin)
+	return otokUpsertTransfer(ctx, s.entClient, *pick, r.TokenContract, r.Decimals, otokSourceAdmin)
+}
+
+// adminPickBinance 管理员补单（币安数据源）：按交易哈希或链下编号查币安充值，选出转入订单地址、已入账的那一笔。
+func (s *OtokUSDTService) adminPickBinance(ctx context.Context, r *otokUSDTReservation, ucfg *provider.OtokUSDTConfig, in otokTxInput, logIndex *int64) (*otokUSDTTransfer, error) {
+	found, err := s.lookupBinance(ctx, r, ucfg, in)
 	if err != nil {
 		return nil, err
 	}
-	if row.OrderID.Valid && row.OrderID.Int64 != order.ID {
-		return nil, infraerrors.Conflict("USDT_TX_ALREADY_USED", fmt.Sprintf("this transaction is already used by order %d", row.OrderID.Int64))
-	}
-	if !row.OrderID.Valid {
-		if row.Status != otokTransferSeen && row.Status != otokTransferReview && row.Status != otokTransferDropped {
-			if err := otokSetTransferStatus(ctx, s.entClient, row.ID, otokTransferReview, "", false); err != nil {
-				return nil, err
+	var pick *otokBinanceFound
+	for i := range found {
+		f := &found[i]
+		if logIndex != nil {
+			if f.row.LogIndex == *logIndex {
+				pick = f
 			}
+			continue
 		}
-		ok, err := s.bindTransfer(ctx, row.ID, order.ID, "admin: "+reason, true)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, infraerrors.Conflict("USDT_TX_ALREADY_USED", "this transaction has already been used")
+		if cents, exact := f.row.AmountCents(); exact && cents == r.AmountCents {
+			pick = f
+			break
 		}
 	}
-	s.paymentSvc.writeAuditLog(ctx, order.ID, "OTOK_USDT_ADMIN_BIND", operator, map[string]any{
-		"network": string(r.Network), "txHash": norm, "logIndex": pick.LogIndex,
-		"onChainAmount": otokchain.FormatRaw(pick.Amount, r.Decimals), "expectedAmount": otokchain.FormatCents(r.AmountCents),
-		"reason": reason,
-	})
-	bound, err := otokGetTransfer(ctx, s.entClient, row.ID)
-	if err != nil {
-		return nil, err
+	if pick == nil && logIndex == nil && len(found) == 1 {
+		pick = &found[0]
 	}
-	if credited, err := s.creditBoundTransfer(ctx, bound, operator); err != nil {
-		return nil, infraerrors.ServiceUnavailable("USDT_CREDIT_FAILED", err.Error())
-	} else if !credited {
-		return nil, infraerrors.ServiceUnavailable("USDT_CREDIT_FAILED", "transaction bound but the order was not credited; check the audit log")
+	if pick == nil {
+		return nil, infraerrors.BadRequest("USDT_TX_AMBIGUOUS", "multiple deposits share this transaction; specify log_index")
 	}
-	refreshed, err := s.paymentSvc.GetOrderByID(ctx, order.ID)
-	if err != nil {
-		return nil, err
+	if !pick.deposit.Credited() {
+		return nil, infraerrors.BadRequest("USDT_TX_UNCONFIRMED",
+			fmt.Sprintf("Binance has not credited this deposit yet (status %d)", pick.deposit.Status))
 	}
-	return s.orderDetail(ctx, refreshed, r)
+	return pick.row, nil
 }
 
 // AdminIgnoreTransfer 把未匹配 / 待审核的转账标记为已忽略。
@@ -780,7 +862,9 @@ type OtokUSDTTransferView struct {
 	LastError      string     `json:"last_error,omitempty"`
 	LastErrorAt    *time.Time `json:"last_error_at,omitempty"`
 	Confirmations  *int64     `json:"confirmations,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
+	// OffChain 为 true 表示币安链下转账：TxHash 是币安的转账编号，没有链上交易。
+	OffChain  bool      `json:"off_chain"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (s *OtokUSDTService) transferView(ctx context.Context, t *otokUSDTTransfer, admin bool) *OtokUSDTTransferView {
@@ -792,8 +876,11 @@ func (s *OtokUSDTService) transferView(ctx context.Context, t *otokUSDTTransfer,
 		FromAddress: t.FromAddress, ToAddress: t.ToAddressNorm, Amount: otokchain.FormatRaw(t.AmountRaw, t.Decimals),
 		Source: t.Source, Status: t.Status, CreditAttempts: t.CreditAttempts, CreatedAt: t.CreatedAt,
 	}
+	v.OffChain = otokIsOffChainTransfer(t)
 	if spec, err := otokchain.SpecFor(t.Network); err == nil {
-		v.ExplorerURL = spec.ExplorerTxLink(t.TxHash)
+		if !v.OffChain {
+			v.ExplorerURL = spec.ExplorerTxLink(t.TxHash)
+		}
 		if spec.Kind == otokchain.KindEVM {
 			if addr, err := otokchain.ParseAddress(t.Network, t.ToAddressNorm); err == nil {
 				v.ToAddress = addr.Display
@@ -825,25 +912,27 @@ func (s *OtokUSDTService) transferView(ctx context.Context, t *otokUSDTTransfer,
 
 // OtokUSDTOrderDetail 是 USDT 订单的付款信息。
 type OtokUSDTOrderDetail struct {
-	OrderID               int64                 `json:"order_id"`
-	OutTradeNo            string                `json:"out_trade_no"`
-	PaymentType           string                `json:"payment_type"`
-	Network               string                `json:"network"`
-	NetworkName           string                `json:"network_name"`
-	Address               string                `json:"address"`
-	TokenContract         string                `json:"token_contract"`
-	Amount                string                `json:"amount"`
-	StationAmount         float64               `json:"station_amount"`
-	ExchangeRate          string                `json:"exchange_rate"`
-	FeeRate               string                `json:"fee_rate"`
-	RequiredConfirmations int64                 `json:"required_confirmations"`
-	OrderStatus           string                `json:"order_status"`
-	ReservationStatus     string                `json:"reservation_status"`
-	ExpiresAt             time.Time             `json:"expires_at"`
-	ReservedUntil         time.Time             `json:"reserved_until"`
-	CreatedAt             time.Time             `json:"created_at"`
-	CanSubmitTx           bool                  `json:"can_submit_tx"`
-	Transfer              *OtokUSDTTransferView `json:"transfer,omitempty"`
+	OrderID               int64     `json:"order_id"`
+	OutTradeNo            string    `json:"out_trade_no"`
+	PaymentType           string    `json:"payment_type"`
+	Network               string    `json:"network"`
+	NetworkName           string    `json:"network_name"`
+	Address               string    `json:"address"`
+	TokenContract         string    `json:"token_contract"`
+	Amount                string    `json:"amount"`
+	StationAmount         float64   `json:"station_amount"`
+	ExchangeRate          string    `json:"exchange_rate"`
+	FeeRate               string    `json:"fee_rate"`
+	RequiredConfirmations int64     `json:"required_confirmations"`
+	OrderStatus           string    `json:"order_status"`
+	ReservationStatus     string    `json:"reservation_status"`
+	ExpiresAt             time.Time `json:"expires_at"`
+	ReservedUntil         time.Time `json:"reserved_until"`
+	CreatedAt             time.Time `json:"created_at"`
+	CanSubmitTx           bool      `json:"can_submit_tx"`
+	// DepositSource 为当前到账数据源（chain / binance），付款页据此决定是否提示链下转账。
+	DepositSource string                `json:"deposit_source"`
+	Transfer      *OtokUSDTTransferView `json:"transfer,omitempty"`
 }
 
 func (s *OtokUSDTService) orderDetail(ctx context.Context, order *dbent.PaymentOrder, r *otokUSDTReservation) (*OtokUSDTOrderDetail, error) {
@@ -873,6 +962,7 @@ func (s *OtokUSDTService) buildOrderDetail(ctx context.Context, order *dbent.Pay
 		d.Transfer = s.transferView(ctx, t, admin)
 	}
 	d.CanSubmitTx = d.Transfer == nil && otokOrderMatchable(order.Status) && time.Now().Before(r.ReservedUntil)
+	d.DepositSource = s.instanceConfig(ctx, r.InstanceID).DepositSource
 	return d, nil
 }
 
@@ -957,6 +1047,7 @@ type OtokUSDTCursorView struct {
 // OtokUSDTHealth 是监听服务健康状态。
 type OtokUSDTHealth struct {
 	Testnet             bool                 `json:"testnet"`
+	DepositSource       string               `json:"deposit_source"`
 	ActiveReservations  int64                `json:"active_reservations"`
 	UnmatchedTransfers  int64                `json:"unmatched_transfers"`
 	ReviewTransfers     int64                `json:"review_transfers"`
@@ -993,6 +1084,9 @@ func (s *OtokUSDTService) Health(ctx context.Context) (*OtokUSDTHealth, error) {
 		CreditFailed:        otokCount(ctx, s.entClient, `SELECT COUNT(*) FROM otok_usdt_transfers WHERE status = 'credit_failed'`),
 		AwaitingConfirmTxns: otokCount(ctx, s.entClient, `SELECT COUNT(*) FROM otok_usdt_transfers WHERE status = 'bound'`),
 		CreditBlocked:       otokCount(ctx, s.entClient, `SELECT COUNT(*) FROM otok_usdt_transfers WHERE status = 'bound' AND last_error <> ''`),
+	}
+	if _, ucfg, err := s.enabledInstance(ctx); err == nil && ucfg != nil {
+		h.DepositSource = ucfg.DepositSource
 	}
 	for _, c := range cursors {
 		v := OtokUSDTCursorView{Network: string(c.Network), Address: c.AddressNorm, LastBlock: c.LastBlock, LastError: c.LastError}

@@ -64,6 +64,20 @@ func FormatCents(cents int64) string {
 	return fmt.Sprintf("%s%d.%02d", sign, cents/100, cents%100)
 }
 
+// ParseDecimalRaw 把十进制金额字符串（如 "7.52"）换算为最小单位；小数位多于 decimals 时报错。
+func ParseDecimalRaw(s string, decimals int32) (*big.Int, error) {
+	s = strings.TrimSpace(s)
+	intPart, frac, _ := strings.Cut(s, ".")
+	if intPart == "" || int32(len(frac)) > decimals || strings.ContainsAny(intPart+frac, "+-eE ") {
+		return nil, fmt.Errorf("invalid decimal amount %q", s)
+	}
+	v, ok := new(big.Int).SetString(intPart+frac+strings.Repeat("0", int(decimals)-len(frac)), 10)
+	if !ok || v.Sign() < 0 {
+		return nil, fmt.Errorf("invalid decimal amount %q", s)
+	}
+	return v, nil
+}
+
 // ParseUint256 解析十进制或 0x 十六进制的非负整数。
 func ParseUint256(s string) (*big.Int, error) {
 	s = strings.TrimSpace(s)

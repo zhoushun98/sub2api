@@ -116,6 +116,10 @@ func TestOtokUSDTSensitiveFieldsCoveredByAudit(t *testing.T) {
 	require.True(t, isAuditSensitiveBodyKey(provider.OtokUSDTConfigTronGridAPIKey))
 	require.True(t, validProviderKeys[payment.TypeOtokUSDT])
 	require.True(t, isSensitiveProviderConfigField(payment.TypeOtokUSDT, provider.OtokUSDTConfigTronGridAPIKey))
+	for _, k := range []string{provider.OtokUSDTConfigBinanceAPIKey, provider.OtokUSDTConfigBinanceAPISecret} {
+		require.True(t, isSensitiveProviderConfigField(payment.TypeOtokUSDT, k), k)
+		require.True(t, isAuditSensitiveBodyKey(k), k)
+	}
 	// RPC 地址可能在路径里带 key，审计日志要脱敏。
 	for _, k := range []string{provider.OtokUSDTConfigETHRPCURL, provider.OtokUSDTConfigBSCRPCURL, provider.OtokUSDTConfigPolygonRPCURL} {
 		require.True(t, isAuditSensitiveBodyKey(k), k)
