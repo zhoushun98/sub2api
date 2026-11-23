@@ -44,6 +44,7 @@
 | --- | --- | --- | --- |
 | `.github/workflows/backend-ci.yml` | `on:` | `push` + `pull_request` 改为 `push: tags: ['otok-v*']` + `workflow_dispatch` | 只在打 tag 或手动时跑，推送 `otok` 分支不触发 |
 | `.github/workflows/security-scan.yml` | `on:` | `push` + `pull_request` + 每周 `schedule` 改为 `push: tags: ['otok-v*']` + `workflow_dispatch` | 同上 |
+| `.github/workflows/backend-ci.yml` | `jobs.shell` | 加一行 `if: github.repository != 'zhoushun98/sub2api'` | fork 里跳过 `shell` job。它只测上游的 Apple container 部署脚本（`deploy/apple-container.sh`，2026-07 上游新增）和 compose 部署脚本，fork 用不到；跑在 `macos-15` 上，常因分不到运行机排队 15 分钟后被取消。2026-11-23 站长决定以后都不跑 |
 
 ## 前端
 

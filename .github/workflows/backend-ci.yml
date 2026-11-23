@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   shell:
+    if: github.repository != 'zhoushun98/sub2api' # otok: 只测上游的 Apple container / compose 部署脚本，fork 用不到；macos-15 常排队 15 分钟被取消
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
