@@ -33,15 +33,20 @@ export interface OtokUsdtTransfer {
   to_address: string
   amount: string
   order_id?: number
-  source: 'watcher' | 'user' | 'admin'
+  source: 'watcher' | 'user' | 'admin' | 'binance'
   status: 'seen' | 'bound' | 'credited' | 'credit_failed' | 'review' | 'ignored' | 'dropped'
   note?: string
   credit_attempts: number
   last_error?: string
   last_error_at?: string
   confirmations?: number
+  /** 币安链下转账：tx_hash 是币安的转账编号，没有链上交易。 */
+  off_chain?: boolean
   created_at: string
 }
+
+/** 到账数据源：chain 为链上节点，binance 为币安充值记录（含链下转账）。 */
+export type OtokUsdtDepositSource = 'chain' | 'binance'
 
 export interface OtokUsdtOrderDetail {
   order_id: number
@@ -62,6 +67,7 @@ export interface OtokUsdtOrderDetail {
   reserved_until: string
   created_at: string
   can_submit_tx: boolean
+  deposit_source?: OtokUsdtDepositSource
   transfer?: OtokUsdtTransfer
 }
 
@@ -76,6 +82,7 @@ export interface OtokUsdtHealthCursor {
 
 export interface OtokUsdtHealth {
   testnet: boolean
+  deposit_source?: OtokUsdtDepositSource
   active_reservations: number
   unmatched_transfers: number
   review_transfers: number

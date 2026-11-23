@@ -7,6 +7,7 @@
           <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
             {{ t('otok.usdt.health') }}
             <span v-if="health?.testnet" class="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{{ t('otok.usdt.testnet') }}</span>
+            <span v-if="health?.deposit_source" data-test="otok-usdt-deposit-source" class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">{{ t('otok.usdt.depositSource') }}：{{ statusLabel('depositSources', health.deposit_source) }}</span>
           </h3>
         </div>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -82,7 +83,10 @@
               <td class="whitespace-nowrap px-4 py-2 text-xs">{{ networkLabel(row.network) }}</td>
               <td class="whitespace-nowrap px-4 py-2 font-medium tabular-nums text-gray-900 dark:text-white">{{ row.amount }}</td>
               <td class="px-4 py-2 font-mono text-xs">
-                <a :href="row.explorer_url" target="_blank" rel="noopener noreferrer" class="text-primary-600 hover:underline dark:text-primary-400" :title="row.tx_hash">{{ shortHash(row.tx_hash) }}</a>
+                <span v-if="row.off_chain" :title="row.tx_hash">
+                  <span class="mr-1 rounded bg-yellow-100 px-1 py-0.5 font-sans text-[10px] font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">{{ t('otok.usdt.offChain') }}</span>{{ offChainNumber(row.tx_hash) }}
+                </span>
+                <a v-else :href="row.explorer_url" target="_blank" rel="noopener noreferrer" class="text-primary-600 hover:underline dark:text-primary-400" :title="row.tx_hash">{{ shortHash(row.tx_hash) }}</a>
                 <span v-if="row.log_index > 0" class="text-gray-400"> #{{ row.log_index }}</span>
               </td>
               <td class="px-4 py-2 font-mono text-xs" :title="row.from_address">{{ shortHash(row.from_address) }}</td>
@@ -187,7 +191,12 @@ function networkLabel(network: string): string {
   return te(key) ? t(key) : network
 }
 
-function statusLabel(group: 'transferStatus' | 'sources', value: string): string {
+/** 链下转账的 tx_hash 是「Off-chain transfer 编号」，列表里只显示编号。 */
+function offChainNumber(txHash: string): string {
+  return txHash.replace(/^\D+/, '')
+}
+
+function statusLabel(group: 'transferStatus' | 'sources' | 'depositSources', value: string): string {
   const key = `otok.usdt.${group}.${value}`
   return te(key) ? t(key) : value
 }

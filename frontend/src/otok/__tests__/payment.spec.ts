@@ -34,6 +34,20 @@ describe('otok payment helpers', () => {
   })
 })
 
+describe('USDT 到账数据源配置', () => {
+  it('缺省为链上节点，币安 key 按敏感字段处理', () => {
+    const fields = Object.fromEntries(PROVIDER_CONFIG_FIELDS.otok_usdt.map((f) => [f.key, f]))
+    expect(fields.depositSource.defaultValue).toBe('chain')
+    expect(fields.depositSource.optional).toBeFalsy()
+    expect(fields.depositSource.options?.map((o) => o.value)).toEqual(['binance', 'chain'])
+    expect(fields.binanceApiKey.sensitive).toBe(true)
+    expect(fields.binanceApiSecret.sensitive).toBe(true)
+    // 链上模式不需要币安 key，必须可以留空。
+    expect(fields.binanceApiKey.optional).toBe(true)
+    expect(fields.binanceApiSecret.optional).toBe(true)
+  })
+})
+
 describe('otokMergeLocale', () => {
   it('逐层合并而不是整块覆盖', () => {
     const base = { payment: { methods: { alipay: '支付宝' }, title: '充值' }, common: { ok: '确定' } }

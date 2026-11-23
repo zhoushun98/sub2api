@@ -33,7 +33,8 @@
       <div class="col-span-2">
         <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('otok.usdt.transfer') }}</p>
         <div v-if="detail.transfer" class="space-y-0.5 text-xs text-gray-900 dark:text-white">
-          <a :href="detail.transfer.explorer_url" target="_blank" rel="noopener noreferrer" class="break-all font-mono text-primary-600 hover:underline dark:text-primary-400">
+          <p v-if="detail.transfer.off_chain" class="break-all font-mono">{{ t('otok.usdt.offChain') }} · {{ detail.transfer.tx_hash }}</p>
+          <a v-else :href="detail.transfer.explorer_url" target="_blank" rel="noopener noreferrer" class="break-all font-mono text-primary-600 hover:underline dark:text-primary-400">
             {{ detail.transfer.tx_hash }}
           </a>
           <p>
@@ -50,8 +51,8 @@
     <div v-if="canBind" class="mt-3 border-t border-emerald-200 pt-3 dark:border-emerald-800">
       <button v-if="!bindOpen" type="button" class="btn btn-secondary btn-sm" @click="bindOpen = true">{{ t('otok.usdt.bindTx') }}</button>
       <div v-else class="space-y-2">
-        <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('otok.usdt.bindTxHint') }}</p>
-        <input v-model="bindForm.txHash" type="text" class="input font-mono text-xs" spellcheck="false" :placeholder="t('otok.usdt.txHashPlaceholder')" />
+        <p class="text-xs text-gray-500 dark:text-gray-400">{{ binanceSource ? t('otok.usdt.bindTxHintBinance') : t('otok.usdt.bindTxHint') }}</p>
+        <input v-model="bindForm.txHash" type="text" class="input font-mono text-xs" spellcheck="false" :placeholder="binanceSource ? t('otok.usdt.txHashPlaceholderBinance') : t('otok.usdt.txHashPlaceholder')" />
         <div class="grid grid-cols-3 gap-2">
           <input v-model="bindForm.logIndex" type="number" min="0" class="input text-xs" :placeholder="t('otok.usdt.logIndex')" />
           <input v-model="bindForm.reason" type="text" class="input col-span-2 text-xs" :placeholder="t('otok.usdt.reason')" />
@@ -88,6 +89,8 @@ const binding = ref(false)
 const bindForm = reactive({ txHash: '', logIndex: '', reason: '' })
 
 const PAID_LIKE = ['PAID', 'RECHARGING', 'COMPLETED', 'REFUND_REQUESTED', 'REFUNDING', 'REFUND_PENDING', 'PARTIALLY_REFUNDED', 'REFUNDED', 'REFUND_FAILED']
+
+const binanceSource = computed(() => detail.value?.deposit_source === 'binance')
 
 const canBind = computed(() => {
   const d = detail.value

@@ -170,6 +170,34 @@ describe('OtokUsdtTransferPanel', () => {
     expect(wrapper.find('[data-test="otok-usdt-txhash"]').exists()).toBe(false)
   })
 
+  it('币安数据源下提示链下转账，并允许提交链下转账编号', async () => {
+    getUsdtOrder.mockResolvedValue({ data: detailFactory({ deposit_source: 'binance' }) })
+    submitTx.mockResolvedValue({ data: detailFactory({ deposit_source: 'binance', transfer: { id: 1, status: 'bound', off_chain: true } }) })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="otok-usdt-binance-hint"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('otok.usdt.txHashLabelBinance')
+    expect(wrapper.get('[data-test="otok-usdt-txhash"]').attributes('placeholder')).toBe('otok.usdt.txHashPlaceholderBinance')
+
+    await wrapper.get('[data-test="otok-usdt-txhash"]').setValue(' 链下转账 434226888519 ')
+    const submit = wrapper.findAll('button').find((b) => b.text() === 'otok.usdt.submitTx')
+    await submit!.trigger('click')
+    await flushPromises()
+
+    expect(submitTx).toHaveBeenCalledWith(7, '链下转账 434226888519')
+    expect(wrapper.text()).toContain('otok.usdt.detectedBinance')
+  })
+
+  it('链上数据源下不显示链下转账提示', async () => {
+    getUsdtOrder.mockResolvedValue({ data: detailFactory({ deposit_source: 'chain' }) })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="otok-usdt-binance-hint"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('otok.usdt.txHashLabel')
+  })
+
   it('提交 TxHash 时去掉首尾空白', async () => {
     getUsdtOrder.mockResolvedValue({ data: detailFactory() })
     submitTx.mockResolvedValue({ data: detailFactory({ transfer: { id: 1, status: 'bound' } }) })

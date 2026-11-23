@@ -73,6 +73,7 @@
           >
             <p class="font-semibold">{{ t('otok.usdt.networkWarning', { network: networkName }) }}</p>
             <p class="mt-1">{{ t('otok.usdt.exactAmountWarning') }}</p>
+            <p v-if="binanceSource" data-test="otok-usdt-binance-hint" class="mt-1">{{ t('otok.usdt.binanceHint') }}</p>
           </div>
 
           <div class="w-full text-center">
@@ -111,7 +112,7 @@
         </template>
         <template v-else-if="transferState === 'detected'">
           <div class="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-2 border-[#26A17B] border-t-transparent"></div>
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('otok.usdt.detected') }}</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ binanceSource ? t('otok.usdt.detectedBinance') : t('otok.usdt.detected') }}</p>
           <p v-if="confirmationText" class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ confirmationText }}</p>
         </template>
         <template v-else-if="inGrace">
@@ -121,12 +122,12 @@
         <template v-else>
           <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('otok.usdt.expiresIn') }}</p>
           <p class="mt-1 text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{{ countdownDisplay }}</p>
-          <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">{{ t('otok.usdt.waiting') }}</p>
+          <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">{{ binanceSource ? t('otok.usdt.waitingBinance') : t('otok.usdt.waiting') }}</p>
         </template>
       </div>
 
       <div v-if="detail.can_submit_tx && transferState === 'none'" class="card p-4">
-        <label class="input-label">{{ t('otok.usdt.txHashLabel') }}</label>
+        <label class="input-label">{{ binanceSource ? t('otok.usdt.txHashLabelBinance') : t('otok.usdt.txHashLabel') }}</label>
         <div class="mt-1 flex gap-2">
           <input
             v-model="txHash"
@@ -135,7 +136,7 @@
             class="input min-w-0 flex-1 font-mono text-xs"
             spellcheck="false"
             autocomplete="off"
-            :placeholder="t('otok.usdt.txHashPlaceholder')"
+            :placeholder="binanceSource ? t('otok.usdt.txHashPlaceholderBinance') : t('otok.usdt.txHashPlaceholder')"
           />
           <button class="btn btn-primary shrink-0" :disabled="!txHash.trim() || submittingTx" @click="submitTx">
             {{ submittingTx ? t('common.processing') : t('otok.usdt.submitTx') }}
@@ -208,6 +209,9 @@ const networkIcon = computed(() => {
   const type = detail.value?.payment_type || props.paymentType
   return isOtokUsdtPaymentType(type) ? OTOK_METHOD_ICONS[type] : ''
 })
+
+/** 到账数据源为币安充值记录时，币安用户的链下转账也会自动到账。 */
+const binanceSource = computed(() => detail.value?.deposit_source === 'binance')
 
 const expiresAtMs = computed(() => new Date(detail.value?.expires_at || props.expiresAt || 0).getTime())
 const remainingSeconds = computed(() => Math.max(0, Math.floor((expiresAtMs.value - now.value) / 1000)))

@@ -37,6 +37,16 @@ export const OTOK_PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'bep20Address', label: '', sensitive: false, optional: true, clearable: true },
     { key: 'polygonAddress', label: '', sensitive: false, optional: true, clearable: true },
     { key: 'erc20Address', label: '', sensitive: false, optional: true, clearable: true, hintKey: 'admin.settings.payment.field_otokAddressHint' },
+    {
+      key: 'depositSource', label: '', sensitive: false, defaultValue: 'chain', hintKey: 'admin.settings.payment.field_depositSourceHint',
+      options: [
+        // 上游配置弹窗的选项标签不走 i18n，直接写双语。
+        { value: 'binance', label: '币安 API / Binance API' },
+        { value: 'chain', label: '链上节点 / On-chain nodes' },
+      ],
+    },
+    { key: 'binanceApiKey', label: '', sensitive: true, optional: true },
+    { key: 'binanceApiSecret', label: '', sensitive: true, optional: true, hintKey: 'admin.settings.payment.field_binanceApiSecretHint' },
     { key: 'tronGridApiKey', label: '', sensitive: true, optional: true, hintKey: 'admin.settings.payment.field_tronGridApiKeyHint' },
     { key: 'bscRpcUrl', label: '', sensitive: false, optional: true, clearable: true },
     { key: 'polygonRpcUrl', label: '', sensitive: false, optional: true, clearable: true },
