@@ -48,6 +48,21 @@ func TestOtokBinanceRecordsFilterAndOrdinal(t *testing.T) {
 	}
 	recs := otokBinanceRecords(cfg, deposits)
 	require.Len(t, recs, 3)
+
+	// 同一 txId 下的另一笔从处理中变成被拒绝：其余记录的序号不变（序号按全部记录分配）。
+	logIndexOf99 := func(status98 int) int64 {
+		list := append([]otokchain.BinanceDeposit{
+			{ID: "98", Coin: "USDT", Amount: "3.00", Network: "BSC", Status: status98, Address: otokTestEVMNorm, TxID: hash, InsertTime: 1},
+		}, deposits[:2]...)
+		for _, r := range otokBinanceRecords(cfg, list) {
+			if r.deposit.ID == "99" {
+				return r.transfer.LogIndex
+			}
+		}
+		t.Fatal("deposit 99 missing")
+		return 0
+	}
+	require.Equal(t, logIndexOf99(otokchain.BinanceDepositPending), logIndexOf99(otokchain.BinanceDepositRejected))
 	got := map[string]otokchain.Transfer{}
 	for _, r := range recs {
 		got[r.deposit.ID] = r.transfer

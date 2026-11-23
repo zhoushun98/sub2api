@@ -103,9 +103,10 @@ func otokBinanceRecords(ucfg *provider.OtokUSDTConfig, deposits []otokchain.Bina
 	for _, a := range ucfg.Addresses {
 		own[a.Norm] = true
 	}
+	// 序号按同一 txId 下的全部记录分配（含已被拒绝的），某一笔状态变化不会改变其他记录的序号。
 	var kept []otokchain.BinanceDeposit
 	for _, d := range deposits {
-		if !strings.EqualFold(strings.TrimSpace(d.Coin), "USDT") || d.Rejected() || strings.TrimSpace(d.ID) == "" {
+		if !strings.EqualFold(strings.TrimSpace(d.Coin), "USDT") || strings.TrimSpace(d.ID) == "" {
 			continue
 		}
 		kept = append(kept, d)
@@ -120,6 +121,9 @@ func otokBinanceRecords(ucfg *provider.OtokUSDTConfig, deposits []otokchain.Bina
 	ord := map[string]int64{}
 	for _, d := range kept {
 		ord[d.TxID]--
+		if d.Rejected() {
+			continue
+		}
 		n, ok := otokchain.BinanceNetwork(d.Network)
 		if !ok {
 			continue
