@@ -5,7 +5,7 @@
 同步上游起冲突时，先以官方代码为准解决冲突，再按本表逐条把钩子补回去。
 
 - 用 `git grep -n "otok" -- ':!docs' ':!*otok*'` 可以快速核对钩子是否都在。
-- 基线：v0.2.24（`328db26f4`，即 tag 之后的 VERSION 同步提交）。
+- 基线：v0.2.25（`0f6671457`，即 tag 之后的 VERSION 同步提交）。
 
 ## 后端
 
@@ -17,7 +17,7 @@
 | 同上 | `selectCreateOrderInstance` 的 `SelectInstance` 调用 | 第 2 个参数 `""` 改为 `otokForcedProviderKey(req.PaymentType)` | USDT 订单只能选中 `otok_usdt` 实例。上游把 `supported_types` 为空的实例视为支持所有类型，不加限制会把 USDT 订单分给支付宝等实例 |
 | `backend/internal/service/payment_config_providers.go` | `CreateProviderInstance`，易支付校验之后 | `s.otokValidateProviderInstance(ctx, 0, ...)` | 校验 USDT 实例：类型必须是 otok 类型；勾选的网络必须填地址；同时只能启用一个。非 otok 实例不能声明 otok 类型 |
 | 同上 | `UpdateProviderInstance`，易支付校验之后 | `s.otokValidateProviderInstance(ctx, id, ...)` | 同上 |
-| `backend/internal/service/upstream_billing_probe.go` | `probeLoadedAccount`，`response_too_large` 判断之后、`404/405 → unsupported` 判断之前 | 5 行：`if otok := s.otokNewAPIBillingFallback(...); otok.done { return ... } else if otok.body != nil { body, resp.StatusCode = otok.body, http.StatusOK }` | 上游不是 sub2api 时改走 new-api 的 `/api/log/token`，识别成功则把合成的 `sub2api.key_billing` 响应交回原解析流程；不是 new-api 时原样落到 unsupported |
+| `backend/internal/service/upstream_billing_probe.go` | `fetchBilling`，`response_too_large` 判断之后、`404/405 → unsupported` 判断之前 | 3 行：`if otok := s.otokNewAPIBillingFallback(...); otok.handled { return otok.reply, otok.err }` | 上游不是 sub2api 时改走 new-api 的 `/api/log/token`：识别成功返回合成的 `sub2api.key_billing` 响应（状态 200），交回上游解析流程；失败返回原因码（如 `newapi_no_usage_log`、`http_error`），由上游 `probeLoadedAccount` 落库；不是 new-api 时原样落到 unsupported。v0.2.25 上游把探测拆成 `fetchBilling`（取数）+ `probeLoadedAccount`（落库），钩子随之从后者移到前者。账号编辑页「同步上游分组」的预览（`PreviewGroup`）也走 `fetchBilling`，对 new-api 账号会多请求一次 `/api/log/token`，成功时返回空分组信息（与没有钩子时一致），失败时提示读取失败 |
 | `backend/internal/handler/handler.go` | `Handlers` 结构体末尾 | `Otok *OtokHandlers` | 挂载 fork handler |
 | `backend/internal/handler/wire.go` | `ProvideSystemHandler` | `admin.NewSystemHandler(newOtokUpdateGuard(updateService), lockService)` | 禁用在线更新和回滚 |
 | 同上 | `ProvideHandlers` 参数末尾和返回值 | 新增 `otokHandlers *OtokHandlers` 参数与 `Otok: otokHandlers` 字段 | wire 注入 |
@@ -74,6 +74,7 @@
 | `frontend/src/i18n/locales/zh/index.ts`、`en/index.ts` | import 与 `export default` | `export default otokMergeLocale({ ...上游原样... }, otok)`（**改写了 2 行**） | 深合并 fork 文案。上游是浅展开，直接 `...otok` 会整块覆盖 `payment` 等对象 |
 | `frontend/src/views/user/ChannelStatusView.vue` | V2 分支与 import | `<ChannelStatusV2View v-else />` 换成 `<OtokChannelStatusCardsView v-else />`，import 同步替换（**改写了上游 2 行**） | V2 模式下用户侧「渠道状态」改用 otok 卡片页。上游 `ChannelStatusV2View.vue` 本身未改动，还原这 2 行即可恢复 |
 | `frontend/src/views/user/__tests__/ChannelStatusView.mode.spec.ts` | V2 视图的 mock | mock 目标改为 `../otok/OtokChannelStatusCardsView.vue` | 适配上面的钩子 |
+| `frontend/src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts` | `仅将具有安全 base_url 的 API Key 账号名称链接到站点主页` 用例 | 提示框 class 的断言 `arrayContaining(['self-start'])` 改为 `arrayContaining(['-ml-1'])`（**改写了上游 1 行**，临时） | 上游 v0.2.25 的 `a95c9e263` 把 `AccountsView.vue` 账号名提示框的 `self-start` 去掉了，但没更新这条断言，上游自己的全量 vitest 也挂；`otok image` 构建跑全量 `test:run`，不改就发不了版。改法与上游待合并的 PR #9061 完全一致，上游合并后同步时直接取上游版本，并删掉本行 |
 
 说明：上游的 `components/admin/payment/AdminOrderDetail.vue` 当前没有被任何页面使用（后台订单详情是 `AdminOrdersView.vue` 内联的弹窗），所以没有改它。上游以后如果改用这个组件，需要把 `OtokUsdtOrderInfo` 移过去。
 
