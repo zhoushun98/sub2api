@@ -255,6 +255,51 @@ func TestOtokNewAPIBillingProbeSkipsFallbackForSub2APIUpstream(t *testing.T) {
 	require.Equal(t, []string{"/v1/sub2api/billing"}, upstream.paths())
 }
 
+// 上游 v0.2.25 起账号可开「自动同步上游分组」，探测会带 include=group。
+// new-api 回退照常取到倍率；合成的响应没有分组文字，不会改写账号名称和备注。
+func TestOtokNewAPIBillingProbeWithGroupSyncKeepsAccountText(t *testing.T) {
+	logs := []map[string]any{
+		otokNewAPITestLog(t, 2, 1792504062, "gpt混池", map[string]any{"group_ratio": 0.045}),
+	}
+	svc, account, upstream, _ := newOtokNewAPIProbeTest(t, "https://newapi.example", map[string]func() *http.Response{
+		"/api/log/token": func() *http.Response {
+			return otokNewAPITestResponse(http.StatusOK, nil, otokNewAPITestLogBody(t, logs))
+		},
+	})
+	notes := "球球备注"
+	account.Name = "球球-GPT"
+	account.Notes = &notes
+	account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = true
+	account.Extra[UpstreamBillingGroupSyncEnabledExtraKey] = true
+
+	snapshot, err := svc.ProbeAccount(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+	require.Equal(t, 0.045, snapshot.Data["resolved_rate_multiplier"])
+	require.NotNil(t, account.RateMultiplier)
+	require.Equal(t, 0.045, *account.RateMultiplier)
+	require.Equal(t, "球球-GPT", account.Name)
+	require.Equal(t, "球球备注", *account.Notes)
+	require.Equal(t, []string{"/v1/sub2api/billing", "/api/log/token"}, upstream.paths())
+	require.Equal(t, "group", upstream.requests[0].URL.Query().Get("include"))
+}
+
+// 账号编辑页的「同步上游分组」预览也走 fetchBilling：new-api 上游没有分组文字，返回空信息。
+func TestOtokNewAPIBillingPreviewGroupReturnsEmpty(t *testing.T) {
+	logs := []map[string]any{
+		otokNewAPITestLog(t, 2, 1792504062, "gpt混池", map[string]any{"group_ratio": 0.045}),
+	}
+	svc, account, _, _ := newOtokNewAPIProbeTest(t, "https://newapi.example", map[string]func() *http.Response{
+		"/api/log/token": func() *http.Response {
+			return otokNewAPITestResponse(http.StatusOK, nil, otokNewAPITestLogBody(t, logs))
+		},
+	})
+
+	group, err := svc.PreviewGroup(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, BillingGroupInfo{}, *group)
+}
+
 func TestOtokNewAPILogTokenURL(t *testing.T) {
 	for baseURL, want := range map[string]string{
 		"https://newapi.example":              "https://newapi.example/api/log/token",

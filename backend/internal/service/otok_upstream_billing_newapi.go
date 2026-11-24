@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -40,13 +39,13 @@ type otokNewAPIBillingTarget struct {
 	tlsProfile *tlsfingerprint.Profile
 }
 
-// otokNewAPIBillingResult：done 表示失败已落库、原流程直接返回 snapshot/err；
-// body 非空表示识别成功，原流程把它当作 200 响应继续解析；两者都没有则按原逻辑记 unsupported。
+// otokNewAPIBillingResult：handled 为 true 时 fetchBilling 直接返回 reply/err。
+// 识别成功时 reply.body 是合成的 sub2api.key_billing 响应、err 为 nil，由上游继续解析；
+// 失败时 err 是原因码，由上游 probeLoadedAccount 落库。handled 为 false 时按原逻辑记 unsupported。
 type otokNewAPIBillingResult struct {
-	body     []byte
-	snapshot *UpstreamBillingProbeSnapshot
-	err      error
-	done     bool
+	reply   upstreamBillingReply
+	err     error
+	handled bool
 }
 
 type otokNewAPILogEntry struct {
@@ -67,7 +66,6 @@ var errOtokNewAPINotRecognized = errors.New("not a new-api log response")
 func (s *UpstreamBillingProbeService) otokNewAPIBillingFallback(
 	ctx context.Context,
 	account *Account,
-	intervalMinutes int,
 	now time.Time,
 	statusCode int,
 	target otokNewAPIBillingTarget,
@@ -76,8 +74,11 @@ func (s *UpstreamBillingProbeService) otokNewAPIBillingFallback(
 		return otokNewAPIBillingResult{}
 	}
 	fail := func(status int, reason string, delay time.Duration) otokNewAPIBillingResult {
-		snapshot, err := s.persistProbeFailure(ctx, account, intervalMinutes, now, status, reason, delay)
-		return otokNewAPIBillingResult{snapshot: snapshot, err: err, done: true}
+		return otokNewAPIBillingResult{
+			reply:   upstreamBillingReply{status: status, retryAfter: delay},
+			err:     errors.New(reason),
+			handled: true,
+		}
 	}
 	logURL, err := otokNewAPILogTokenURL(target.baseURL)
 	if err != nil {
@@ -85,14 +86,14 @@ func (s *UpstreamBillingProbeService) otokNewAPIBillingFallback(
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, upstreamBillingProbeRequestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, logURL, bytes.NewReader(nil))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, logURL, nil)
 	if err != nil {
 		return fail(0, "request_build_failed", 0)
 	}
 	req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(req.Context(), target.profile)))
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+target.apiKey)
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(req.Context(), req.Header)
 	resp, err := s.accountTestService.httpUpstream.DoWithTLS(req, target.proxyURL, account.ID, account.Concurrency, target.tlsProfile)
 	if err != nil {
 		return fail(0, "request_failed", 0)
@@ -137,7 +138,7 @@ func (s *UpstreamBillingProbeService) otokNewAPIBillingFallback(
 	if err != nil {
 		return fail(resp.StatusCode, "invalid_response", 0)
 	}
-	return otokNewAPIBillingResult{body: body}
+	return otokNewAPIBillingResult{reply: upstreamBillingReply{body: body, status: http.StatusOK}, handled: true}
 }
 
 // otokNewAPILogTokenURL 由账号 base_url 推出站点根：去掉末尾的 /v1、/v1beta 再拼 /api/log/token。
