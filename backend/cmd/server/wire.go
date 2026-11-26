@@ -139,7 +139,7 @@ func provideCleanup(
 	promptAudit *securityaudit.PromptService,
 	pluginManager *service.PluginManager,
 	otokUSDT *service.OtokUSDTService, // otok: USDT 链上监听
-	otokPelican *service.OtokPelicanService, // otok: 降智检测（鹈鹕测试）调度
+	otokQuality *service.OtokQualityService, // otok: 降智检测调度
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -430,9 +430,9 @@ func provideCleanup(
 				}
 				return nil
 			}},
-			{"OtokPelicanService", func() error { // otok
-				if otokPelican != nil {
-					otokPelican.Stop()
+			{"OtokQualityService", func() error { // otok
+				if otokQuality != nil {
+					otokQuality.Stop()
 				}
 				return nil
 			}},

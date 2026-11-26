@@ -85,7 +85,7 @@ func otokIntegrationClient(t *testing.T) *dbent.Client {
 }
 
 func otokApplyMigration(ctx context.Context, client *dbent.Client) error {
-	for _, name := range []string{"otok_0001_usdt.sql", "otok_0002_usdt_hardening.sql", "otok_0003_pelican.sql", "otok_0004_usdt_transfer_error.sql", "otok_0005_usdt_binance.sql"} {
+	for _, name := range []string{"otok_0001_usdt.sql", "otok_0002_usdt_hardening.sql", "otok_0003_pelican.sql", "otok_0004_usdt_transfer_error.sql", "otok_0005_usdt_binance.sql", "otok_0006_quality.sql"} {
 		raw, err := migrations.FS.ReadFile(name)
 		if err != nil {
 			return err

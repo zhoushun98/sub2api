@@ -66,8 +66,8 @@ func RegisterOtokRoutes(
 	if h == nil {
 		return
 	}
-	if h.Pelican != nil {
-		registerOtokPelicanRoutes(v1, h.Pelican, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
+	if h.Quality != nil {
+		registerOtokQualityRoutes(v1, h.Quality, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
 	}
 	if h.USDT != nil {
 		submitLimiter := ratelimit.NewRateLimiter(redisClient)
@@ -135,39 +135,42 @@ func registerOtokContactRoutes(
 	}
 }
 
-// otokPelicanMaxBodyBytes 容纳 8000 字 prompt 与分组列表。
-const otokPelicanMaxBodyBytes = 128 << 10
+// otokQualityMaxConfigBodyBytes 容纳 50 个条目（每条提示词最多 8000 字）。
+const otokQualityMaxConfigBodyBytes = 2 << 20
 
-// registerOtokPelicanRoutes 注册「降智检测」（鹈鹕测试）接口，中间件与「联系我们」一致。
-func registerOtokPelicanRoutes(
+// otokQualityMaxRunNowBodyBytes 只有一个 item_id。
+const otokQualityMaxRunNowBodyBytes = 4 << 10
+
+// registerOtokQualityRoutes 注册「降智检测」接口，中间件与「联系我们」一致。
+func registerOtokQualityRoutes(
 	v1 *gin.RouterGroup,
-	h *handler.OtokPelicanHandler,
+	h *handler.OtokQualityHandler,
 	jwtAuth middleware.JWTAuthMiddleware,
 	adminAuth middleware.AdminAuthMiddleware,
 	auditLog middleware.AuditLogMiddleware,
 	settingService *service.SettingService,
 	panelRateLimiter *middleware.PanelRateLimiter,
 ) {
-	user := v1.Group("/otok/pelican")
+	user := v1.Group("/otok/quality")
 	user.Use(gin.HandlerFunc(jwtAuth))
 	user.Use(middleware.BackendModeUserGuard(settingService))
 	user.Use(panelRateLimiter.Global())
 	{
-		user.GET("/groups", h.Groups)
-		user.GET("/groups/:id/rounds", h.Rounds)
+		user.GET("/items", h.Items)
+		user.GET("/items/:id/rounds", h.Rounds)
 		user.GET("/runs/:id", h.Run)
 	}
 
-	adminGroup := v1.Group("/admin/otok/pelican")
+	adminGroup := v1.Group("/admin/otok/quality")
 	adminGroup.Use(gin.HandlerFunc(adminAuth))
 	adminGroup.Use(gin.HandlerFunc(auditLog))
 	adminGroup.Use(middleware.AdminComplianceGuard(settingService))
 	{
 		adminGroup.GET("/config", h.AdminGetConfig)
-		adminGroup.PUT("/config", middleware.RequestBodyLimit(otokPelicanMaxBodyBytes), h.AdminUpdateConfig)
+		adminGroup.PUT("/config", middleware.RequestBodyLimit(otokQualityMaxConfigBodyBytes), h.AdminUpdateConfig)
 		adminGroup.GET("/status", h.AdminStatus)
-		adminGroup.POST("/run-now", middleware.RequestBodyLimit(otokPelicanMaxBodyBytes), h.AdminRunNow)
-		adminGroup.GET("/groups/:id/rounds", h.AdminRounds)
+		adminGroup.POST("/run-now", middleware.RequestBodyLimit(otokQualityMaxRunNowBodyBytes), h.AdminRunNow)
+		adminGroup.GET("/items/:id/rounds", h.AdminRounds)
 		adminGroup.GET("/runs/:id", h.AdminRun)
 	}
 }

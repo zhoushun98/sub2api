@@ -9,6 +9,6 @@ import (
 var OtokProviderSet = wire.NewSet(
 	NewOtokUSDTHandler,
 	admin.NewOtokUSDTHandler,
-	NewOtokPelicanHandler,
+	NewOtokQualityHandler,
 	ProvideOtokHandlers,
 )

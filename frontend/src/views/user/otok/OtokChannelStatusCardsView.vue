@@ -115,23 +115,12 @@
               :key="card.key"
               :card="card"
               :countdown-seconds="countdown"
-              :pelican-enabled="card.groupId != null && pelicanGroupIds.has(card.groupId)"
-              @pelican="openPelican(card)"
             />
           </div>
         </section>
       </template>
     </div>
 
-    <OtokPelicanDialog
-      :show="pelicanCard != null"
-      :group-id="pelicanCard?.groupId ?? null"
-      :group-name="pelicanCard?.name ?? ''"
-      :source="otokPelicanAPI"
-      :interval-minutes="pelicanInfo.interval_minutes"
-      :keep-rounds="pelicanInfo.keep_rounds"
-      @close="pelicanCard = null"
-    />
   </AppLayout>
 </template>
 
@@ -144,8 +133,6 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderIcon from '@/components/user/monitor/ProviderIcon.vue'
 import OtokMonitorCard from '@/components/otok/monitor/OtokMonitorCard.vue'
-import OtokPelicanDialog from '@/components/otok/monitor/OtokPelicanDialog.vue'
-import { otokPelicanAPI, type OtokPelicanGroups } from '@/api/otok/pelican'
 import type { Provider } from '@/api/admin/channelMonitor'
 import * as monitorAPI from '@/api/channelMonitorV2'
 import type {
@@ -167,7 +154,6 @@ import {
   formatPercent,
   groupByProvider,
   providerTint,
-  type OtokMonitorCard as OtokMonitorCardData,
 } from '@/otok/monitorCards'
 
 const RANGES: MonitorRange[] = ['90m', '24h', '7d', '30d']
@@ -188,9 +174,6 @@ const userRates = ref<Record<number, number>>({})
 const loading = ref(false)
 const loaded = ref(false)
 const countdown = ref(0)
-const pelicanInfo = ref<OtokPelicanGroups>({ group_ids: [], interval_minutes: 10, keep_rounds: 10, reasoning_effort: 'medium' })
-const pelicanGroupIds = computed(() => new Set(pelicanInfo.value.group_ids))
-const pelicanCard = ref<OtokMonitorCardData | null>(null)
 
 let controller: AbortController | null = null
 let sequence = 0
@@ -280,19 +263,6 @@ async function reload(withRates = false) {
   }
 }
 
-/** 降智检测入口：拉取启用了鹈鹕测试、且当前用户可用的分组；失败时不显示按钮。 */
-async function loadPelicanGroups() {
-  try {
-    pelicanInfo.value = await otokPelicanAPI.getGroups()
-  } catch {
-    pelicanInfo.value = { ...pelicanInfo.value, group_ids: [] }
-  }
-}
-
-function openPelican(card: OtokMonitorCardData) {
-  if (card.groupId != null) pelicanCard.value = card
-}
-
 function setRange(value: MonitorRange) {
   if (range.value === value) return
   range.value = value
@@ -322,7 +292,6 @@ function formatTime(value: string): string {
 
 onMounted(() => {
   void reload(true)
-  void loadPelicanGroups()
   timer = window.setInterval(tick, 1000)
 })
 

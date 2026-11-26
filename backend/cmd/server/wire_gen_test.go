@@ -105,7 +105,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // promptAudit
 		nil, // pluginManager
 		nil, // otokUSDT
-		nil, // otokPelican
+		nil, // otokQuality
 	)
 
 	require.NotPanics(t, func() {

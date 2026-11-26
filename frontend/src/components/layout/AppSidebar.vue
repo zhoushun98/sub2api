@@ -201,7 +201,7 @@ import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
-import { OtokContactMenuItem, OtokContactIcon } from '@/otok/sidebar' // otok
+import { OtokContactMenuItem, OtokContactIcon, OtokQualityIcon, otokQualityMenuFlag } from '@/otok/sidebar' // otok
 
 interface NavItem {
   path: string
@@ -736,6 +736,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
+    { path: '/otok/quality', label: t('otok.nav.quality'), icon: OtokQualityIcon, featureFlag: otokQualityMenuFlag }, // otok
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagSubscription },
     { path: '/purchase', label: purchaseNavLabel.value, icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
@@ -797,7 +798,7 @@ const adminNavItems = computed((): NavItem[] => {
       children: [
         { path: '/admin/channels/pricing', label: t('nav.channelPricing'), icon: PriceTagIcon },
         { path: '/admin/channels/monitor', label: t('nav.channelMonitor'), icon: SignalIcon, featureFlag: flagChannelMonitor },
-        { path: '/admin/otok/pelican', label: t('otok.nav.pelicanSettings'), icon: SignalIcon, featureFlag: flagChannelMonitor }, // otok
+        { path: '/admin/otok/quality', label: t('otok.nav.qualitySettings'), icon: OtokQualityIcon }, // otok
       ],
     },
     // 「仅充值」站点连管理端的「订阅管理」入口也一并收起（路由本身不拦截）。

@@ -336,9 +336,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	otokUSDTService := service.ProvideOtokUSDTService(paymentService, client, leaderLockCache, db)
 	otokUSDTHandler := handler.NewOtokUSDTHandler(otokUSDTService)
 	adminOtokUSDTHandler := admin.NewOtokUSDTHandler(otokUSDTService)
-	otokPelicanService := service.ProvideOtokPelicanService(settingService, db, configConfig, userRepository, groupRepository, userGroupRateRepository, apiKeyService, billingCacheService, leaderLockCache)
-	otokPelicanHandler := handler.NewOtokPelicanHandler(otokPelicanService, apiKeyService)
-	otokHandlers := handler.ProvideOtokHandlers(otokUSDTHandler, adminOtokUSDTHandler, otokPelicanHandler)
+	otokQualityService := service.ProvideOtokQualityService(settingService, db, configConfig, secretEncryptor, leaderLockCache)
+	otokQualityHandler := handler.NewOtokQualityHandler(otokQualityService)
+	otokHandlers := handler.ProvideOtokHandlers(otokUSDTHandler, adminOtokUSDTHandler, otokQualityHandler)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, mcpoAuthHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService, otokHandlers)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService, settingService, auditLogService)
 	optionalJWTAuthMiddleware := middleware.NewOptionalJWTAuthMiddleware(authService, userService, settingService, auditLogService)
@@ -367,7 +367,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService, channelMonitorQuotaFetcher)
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, usageBillingLaneCombiner, balanceNotifyService, digestSessionStore, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager, otokUSDTService, otokPelicanService)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, usageBillingLaneCombiner, balanceNotifyService, digestSessionStore, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager, otokUSDTService, otokQualityService)
 	application := &Application{
 		Server:        httpServer,
 		PromptAudit:   promptService,
@@ -458,7 +458,7 @@ func provideCleanup(
 	promptAudit *securityaudit.PromptService,
 	pluginManager *service.PluginManager,
 	otokUSDT *service.OtokUSDTService,
-	otokPelican *service.OtokPelicanService,
+	otokQuality *service.OtokQualityService,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -748,9 +748,9 @@ func provideCleanup(
 				}
 				return nil
 			}},
-			{"OtokPelicanService", func() error {
-				if otokPelican != nil {
-					otokPelican.Stop()
+			{"OtokQualityService", func() error {
+				if otokQuality != nil {
+					otokQuality.Stop()
 				}
 				return nil
 			}},

@@ -28,14 +28,25 @@ export const otokRoutes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/admin/otok/pelican',
-    name: 'OtokAdminPelican',
-    component: () => import('@/views/admin/otok/OtokPelicanSettingsView.vue'),
+    path: '/admin/otok/quality',
+    name: 'OtokAdminQuality',
+    component: () => import('@/views/admin/otok/OtokQualitySettingsView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      title: 'Pelican Probe',
-      titleKey: 'otok.nav.pelicanSettings',
+      title: 'Quality Check',
+      titleKey: 'otok.nav.qualitySettings',
+    },
+  },
+  {
+    path: '/otok/quality',
+    name: 'OtokQuality',
+    component: () => import('@/views/user/otok/OtokQualityView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Quality Check',
+      titleKey: 'otok.nav.quality',
     },
   },
 ]
