@@ -55,8 +55,9 @@
           · {{ t('otok.quality.finishedAt') }}：{{ formatOtokQualityTime(selectedRound.finished_at) }}
         </div>
 
+        <!-- 提示词只给管理端看；用户端接口本身也不返回 -->
         <details
-          v-if="selectedRound.prompt"
+          v-if="admin && selectedRound.prompt"
           class="group rounded-lg border border-gray-200 bg-gray-50/60 dark:border-dark-700 dark:bg-dark-800/60"
           data-testid="otok-quality-prompt"
         >
@@ -92,7 +93,7 @@
                 type="button"
                 class="btn btn-secondary btn-sm"
                 data-testid="otok-quality-toggle-preview"
-                @click="previewOn = !previewOn"
+                @click="togglePreview"
               >
                 {{ previewOn ? t('otok.quality.stopPreview') : t('otok.quality.preview') }}
               </button>
@@ -142,17 +143,17 @@
           <div v-if="detailLoading" class="aspect-[3/2] w-full animate-pulse rounded-xl bg-gray-100 dark:bg-dark-700"></div>
 
           <template v-else-if="detail">
-            <!-- 预览：sandbox 不给任何权限，脚本、表单、同源访问都被禁止 -->
+            <!-- 预览：独立地址（响应头自带 CSP：禁止联网和外部资源）；sandbox 只放开脚本，不给同源，读不到本站登录信息 -->
             <div
-              v-if="previewOn && previewDoc"
+              v-if="previewOn && detail.preview_url"
               ref="frameBoxRef"
               class="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-dark-700"
               :style="{ height: `${frameHeight}px` }"
             >
               <iframe
                 :key="detail.id"
-                :srcdoc="previewDoc"
-                sandbox=""
+                :src="detail.preview_url"
+                sandbox="allow-scripts"
                 referrerpolicy="no-referrer"
                 loading="lazy"
                 :title="t('otok.quality.previewTitle', { model: selectedSummary.model })"
@@ -203,7 +204,6 @@ import {
   OTOK_QUALITY_POLL_MS,
   OTOK_QUALITY_PREVIEW_HEIGHT,
   OTOK_QUALITY_PREVIEW_WIDTH,
-  buildOtokQualityPreviewDoc,
   defaultOtokQualityRun,
   formatOtokQualityDuration,
   formatOtokQualityTime,
@@ -252,7 +252,9 @@ const frameBoxRef = ref<HTMLElement | null>(null)
 const frameWidth = ref(OTOK_QUALITY_PREVIEW_WIDTH)
 
 // 已结束的记录内容不会再变，按 id 缓存；进行中的不缓存。
-const detailCache = new Map<number, OtokQualityRunDetail>()
+// 预览地址里的签名 2 小时后过期，缓存只留 1 小时，过期后重新拉取以换新地址。
+const DETAIL_CACHE_TTL_MS = 60 * 60 * 1000
+const detailCache = new Map<number, { detail: OtokQualityRunDetail; at: number }>()
 let pollTimer: number | undefined
 let resizeObserver: ResizeObserver | null = null
 let loadSeq = 0
@@ -262,7 +264,6 @@ const selectedRound = computed(() => rounds.value.find((r) => r.id === selectedR
 const selectedSummary = computed<OtokQualityRunSummary | null>(
   () => selectedRound.value?.runs.find((r) => r.id === selectedRunId.value) ?? null,
 )
-const previewDoc = computed(() => buildOtokQualityPreviewDoc(detail.value?.output_html ?? ''))
 const frameScale = computed(() => Math.min(1, frameWidth.value / OTOK_QUALITY_PREVIEW_WIDTH))
 const frameHeight = computed(() => Math.round(OTOK_QUALITY_PREVIEW_HEIGHT * frameScale.value))
 
@@ -353,17 +354,27 @@ function selectRun(runId: number | null) {
   if (runId != null) void loadDetail(runId)
 }
 
+// 关掉再打开预览会重新加载 iframe：缓存超过时效时，地址里的签名可能已过期，先重新拉取换新地址。
+function togglePreview() {
+  previewOn.value = !previewOn.value
+  const d = detail.value
+  if (!previewOn.value || !d?.preview_url) return
+  const cached = detailCache.get(d.id)
+  if (cached && Date.now() - cached.at < DETAIL_CACHE_TTL_MS) return
+  void loadDetail(d.id)
+}
+
 async function loadDetail(runId: number) {
   const cached = detailCache.get(runId)
-  if (cached) {
-    detail.value = cached
+  if (cached && Date.now() - cached.at < DETAIL_CACHE_TTL_MS) {
+    detail.value = cached.detail
     detailLoading.value = false
     return
   }
   detailLoading.value = true
   try {
     const d = await props.source.getRun(runId)
-    if (!isOtokQualityRunPending(d)) detailCache.set(runId, d)
+    if (!isOtokQualityRunPending(d)) detailCache.set(runId, { detail: d, at: Date.now() })
     if (selectedRunId.value === runId) detail.value = d
   } catch (err) {
     appStore.showError(extractApiErrorMessage(err, t('otok.quality.loadFailed')))

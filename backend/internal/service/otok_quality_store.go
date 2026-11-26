@@ -52,7 +52,6 @@ type OtokQualityRoundInfo struct {
 	ID         int64      `json:"id"`
 	ItemID     int64      `json:"item_id"`
 	Trigger    string     `json:"trigger"`
-	Prompt     string     `json:"prompt"`
 	StartedAt  time.Time  `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at"`
 }
@@ -63,10 +62,11 @@ type OtokQualityRound struct {
 	Runs []OtokQualityRunSummary `json:"runs"`
 }
 
-// OtokQualityAdminRound 是管理端的一轮。
+// OtokQualityAdminRound 是管理端的一轮。提示词只给管理员看。
 type OtokQualityAdminRound struct {
 	OtokQualityRoundInfo
-	Runs []OtokQualityAdminRunSummary `json:"runs"`
+	Prompt string                       `json:"prompt"`
+	Runs   []OtokQualityAdminRunSummary `json:"runs"`
 }
 
 // OtokQualityRunDetail 是用户端的单条记录（含生成内容）。
@@ -77,6 +77,7 @@ type OtokQualityRunDetail struct {
 	InputTokens *int   `json:"input_tokens"`
 	OutputText  string `json:"output_text"`
 	OutputHTML  string `json:"output_html"`
+	PreviewURL  string `json:"preview_url"`
 }
 
 // OtokQualityAdminRunDetail 是管理端的单条记录。
@@ -87,6 +88,7 @@ type OtokQualityAdminRunDetail struct {
 	InputTokens *int   `json:"input_tokens"`
 	OutputText  string `json:"output_text"`
 	OutputHTML  string `json:"output_html"`
+	PreviewURL  string `json:"preview_url"` // 有 HTML 时由 handler 填上带签名的预览地址
 }
 
 // UserView 去掉用户不该看到的字段。
@@ -107,6 +109,7 @@ func (d OtokQualityAdminRunDetail) UserView() OtokQualityRunDetail {
 		InputTokens:           d.InputTokens,
 		OutputText:            d.OutputText,
 		OutputHTML:            d.OutputHTML,
+		PreviewURL:            d.PreviewURL,
 	}
 }
 

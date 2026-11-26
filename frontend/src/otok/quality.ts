@@ -29,18 +29,11 @@ export const OTOK_QUALITY_MAX_API_KEY = 512
 export const OTOK_QUALITY_MODEL_RE = /^[A-Za-z0-9._:/-]{1,128}$/
 export const OTOK_QUALITY_EFFORTS = ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
 
-export const OTOK_QUALITY_SAMPLE_PROMPT = `请创作一个「鹈鹕骑自行车」的单文件 HTML 页面：用内联 SVG 画一只鹈鹕骑在自行车上，画面完整、比例协调、细节丰富，可以加背景和 CSS 动画。
+export const OTOK_QUALITY_SAMPLE_PROMPT = `请创作一个「鹈鹕骑自行车」的单文件 HTML 页面：用内联 SVG 画一只鹈鹕骑在自行车上，画面完整、比例协调、细节丰富，可以加背景和动画。
 要求：
-1. 只能使用内联 SVG 和 CSS，不要使用 JavaScript、外部图片、外部字体或任何外部资源。
+1. 只能使用内联 SVG、CSS 和 JavaScript，不要使用外部图片、外部字体、CDN 脚本或任何外部资源（预览环境不能联网）。
 2. 页面在 1200×800 左右的窗口里完整显示，不出现滚动条。
 3. 只输出完整的 HTML 代码（从 <!DOCTYPE html> 开始），不要任何解释。`
-
-/**
- * 预览文档的固定前缀：iframe 的 srcdoc 继承站点 CSP，而站点 CSP 的 img-src 允许 https:，
- * 这里再收紧一层，挡掉外链图片、字体等外部请求。原文里自带的 CSP 只能再收紧、放不宽。
- */
-export const OTOK_QUALITY_PREVIEW_CSP_PREFIX =
-  `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:">`
 
 export function isOtokQualityRunPending(run: Pick<OtokQualityRunSummary, 'status'>): boolean {
   return run.status === 'queued' || run.status === 'running'
@@ -79,12 +72,6 @@ export function formatOtokQualityTime(value: string | null | undefined): string 
     second: '2-digit',
     hour12: false,
   })
-}
-
-/** 不解析、不改动模型输出，只在前面拼上固定的 CSP 前缀；空内容返回空串（不渲染预览）。 */
-export function buildOtokQualityPreviewDoc(html: string): string {
-  if (!(html ?? '').trim()) return ''
-  return OTOK_QUALITY_PREVIEW_CSP_PREFIX + html
 }
 
 /** 选中轮次时默认打开的模型：优先第一个有 HTML 的。 */

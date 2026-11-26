@@ -841,3 +841,60 @@ func TestDoOtokQualityRequest_ResponseBodyLimit(t *testing.T) {
 	require.Equal(t, "stream_interrupted", res.ErrCode, "没撞上限的中断照旧")
 	require.True(t, res.Retryable)
 }
+
+func TestOtokQualityPreviewToken(t *testing.T) {
+	cfg := otokQualityTestConfig()
+	cfg.JWT.Secret = "jwt-secret-for-test-0123456789abcdef"
+	now := time.Unix(1_800_000_000, 0)
+	s := NewOtokQualityService(nil, nil, cfg, otokQualityEncryptorStub{keyID: "k"}, true)
+	s.now = func() time.Time { return now }
+
+	u := s.PreviewURL(42)
+	require.True(t, strings.HasPrefix(u, OtokQualityPreviewPath+"42?token="), u)
+	token := strings.TrimPrefix(u, OtokQualityPreviewPath+"42?token=")
+	require.True(t, s.VerifyPreviewToken(42, token))
+
+	require.False(t, s.VerifyPreviewToken(43, token), "换 run id 不能复用")
+	require.False(t, s.VerifyPreviewToken(42, ""))
+	require.False(t, s.VerifyPreviewToken(42, "garbage"))
+	exp, sig, _ := strings.Cut(token, ".")
+	require.False(t, s.VerifyPreviewToken(42, exp+"0."+sig), "改过期时间会让签名失效")
+	require.False(t, s.VerifyPreviewToken(42, exp+"."+sig[:len(sig)-1]+"A"))
+
+	// 同一个 JWT 密钥（另一个实例 / 重启后）签出的地址仍然有效；换了密钥就无效。
+	same := NewOtokQualityService(nil, nil, cfg, nil, true)
+	same.now = s.now
+	require.True(t, same.VerifyPreviewToken(42, token))
+	cfg2 := otokQualityTestConfig()
+	cfg2.JWT.Secret = "another-secret-0123456789abcdef0123"
+	other := NewOtokQualityService(nil, nil, cfg2, nil, true)
+	other.now = s.now
+	require.False(t, other.VerifyPreviewToken(42, token))
+
+	// 过期
+	s.now = func() time.Time { return now.Add(otokQualityPreviewTTL + time.Second) }
+	require.False(t, s.VerifyPreviewToken(42, token))
+}
+
+func TestOtokQualityPreviewCSP(t *testing.T) {
+	for _, want := range []string{"default-src 'none'", "script-src 'unsafe-inline'", "connect-src 'none'", "frame-ancestors 'self'", "sandbox allow-scripts"} {
+		require.Contains(t, OtokQualityPreviewCSP, want)
+	}
+	require.NotContains(t, OtokQualityPreviewCSP, "allow-same-origin")
+}
+
+func TestOtokQualityPreviewDocument(t *testing.T) {
+	// 已有 doctype（大小写、前导空白、BOM 都不影响）：原样返回
+	for _, in := range []string{
+		"<!DOCTYPE html><html></html>",
+		"<!doctype html>\n<p>x</p>",
+		"\n  <!DocType html><svg></svg>",
+		"\ufeff<!DOCTYPE html><html></html>",
+	} {
+		require.Equal(t, in, string(OtokQualityPreviewDocument(in)), in)
+	}
+	// 没有 doctype：补上，按标准模式渲染
+	for _, in := range []string{"<html><body>x</body></html>", "<div>片段</div>", "<!-- c --><!DOCTYPE html>", "<!doctyp"} {
+		require.Equal(t, "<!DOCTYPE html>\n"+in, string(OtokQualityPreviewDocument(in)), in)
+	}
+}

@@ -160,6 +160,8 @@ func registerOtokQualityRoutes(
 		user.GET("/items/:id/rounds", h.Rounds)
 		user.GET("/runs/:id", h.Run)
 	}
+	// 预览给 sandbox iframe 加载，带不了登录头，靠结果详情接口下发的签名鉴权；没有登录主体，按 IP 限流。
+	v1.GET("/otok/quality/preview/:id", panelRateLimiter.PublicIP(), h.Preview)
 
 	adminGroup := v1.Group("/admin/otok/quality")
 	adminGroup.Use(gin.HandlerFunc(adminAuth))

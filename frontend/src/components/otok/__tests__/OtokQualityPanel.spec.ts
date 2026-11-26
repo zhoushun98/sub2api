@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import type { OtokQualityRound, OtokQualityRunDetail, OtokQualitySource } from '@/api/otok/quality'
-import { OTOK_QUALITY_PREVIEW_CSP_PREFIX } from '@/otok/quality'
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -49,15 +48,18 @@ function rounds(pending = false): OtokQualityRound[] {
   ]
 }
 
+const previewURL = (id: number) => `/api/v1/otok/quality/preview/${id}?token=1.sig`
+
 function detail(id: number): OtokQualityRunDetail {
   const base: OtokQualityRunDetail = {
     id, model: 'gpt-6-astra', status: 'succeeded', attempt: 1, duration_ms: 1, first_token_ms: null, output_tokens: null,
     reasoning_tokens: null, has_html: true, error_code: '', started_at: null, finished_at: null,
     round_id: 2, item_id: 7, input_tokens: null,
     output_text: '```html\n' + HTML + '\n```', output_html: HTML,
+    preview_url: previewURL(id),
   }
-  if (id === 22) return { ...base, model: 'gpt-6.1-sol', status: 'failed', has_html: false, error_code: 'http_5xx', error_message: 'bad gateway from upstream.example', http_status: 502, output_text: '', output_html: '' }
-  if (id === 23) return { ...base, model: 'claude-x', has_html: false, output_text: PLAIN, output_html: '' }
+  if (id === 22) return { ...base, model: 'gpt-6.1-sol', status: 'failed', has_html: false, error_code: 'http_5xx', error_message: 'bad gateway from upstream.example', http_status: 502, output_text: '', output_html: '', preview_url: undefined }
+  if (id === 23) return { ...base, model: 'claude-x', has_html: false, output_text: PLAIN, output_html: '', preview_url: undefined }
   return base
 }
 
@@ -76,7 +78,7 @@ describe('OtokQualityPanel', () => {
   beforeEach(() => setActivePinia(createPinia()))
   afterEach(() => vi.useRealTimers())
 
-  it('默认预览最新一轮第一个有 HTML 的模型，iframe 不给任何沙箱权限并带固定 CSP 前缀', async () => {
+  it('默认预览最新一轮第一个有 HTML 的模型，iframe 加载独立预览地址，沙箱只放开脚本', async () => {
     const src = source(() => rounds())
     const wrapper = mountPanel(src)
     await flushPromises()
@@ -89,16 +91,18 @@ describe('OtokQualityPanel', () => {
 
     const iframe = wrapper.find('[data-testid="otok-quality-iframe"]')
     expect(iframe.exists()).toBe(true)
-    expect(iframe.attributes('sandbox')).toBe('')
+    // 不能给 allow-same-origin：同源 + 脚本 = 能读本站登录信息
+    expect(iframe.attributes('sandbox')).toBe('allow-scripts')
     expect(iframe.attributes('referrerpolicy')).toBe('no-referrer')
-    expect(iframe.attributes('srcdoc')).toBe(OTOK_QUALITY_PREVIEW_CSP_PREFIX + HTML)
+    expect(iframe.attributes('src')).toBe(previewURL(21))
+    expect(iframe.attributes('srcdoc')).toBeUndefined()
 
     await wrapper.find('[data-testid="otok-quality-toggle-preview"]').trigger('click')
     expect(wrapper.find('[data-testid="otok-quality-iframe"]').exists()).toBe(false)
   })
 
   it('原文和提示词以纯文本展示，不走 v-html', async () => {
-    const wrapper = mountPanel(source(() => rounds()))
+    const wrapper = mountPanel(source(() => rounds()), true)
     await flushPromises()
     await wrapper.find('[data-testid="otok-quality-toggle-source"]').trigger('click')
     const pre = wrapper.find('[data-testid="otok-quality-source"]')
@@ -141,9 +145,16 @@ describe('OtokQualityPanel', () => {
     expect(adminView.find('[data-testid="otok-quality-error-detail"]').text()).toContain('bad gateway from upstream.example')
   })
 
-  it('切换轮次会拉对应记录并显示该轮提示词', async () => {
+  it('用户端不显示提示词（即使接口误带了也不显示）', async () => {
+    const wrapper = mountPanel(source(() => rounds()))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="otok-quality-prompt"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('画一只鹈鹕')
+  })
+
+  it('管理端切换轮次会拉对应记录并显示该轮提示词', async () => {
     const src = source(() => rounds())
-    const wrapper = mountPanel(src)
+    const wrapper = mountPanel(src, true)
     await flushPromises()
     await wrapper.find('[data-testid="otok-quality-round-1"]').trigger('click')
     await flushPromises()
@@ -171,12 +182,56 @@ describe('OtokQualityPanel', () => {
     await wrapper.find('[data-testid="otok-quality-round-2"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('.animate-pulse').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="otok-quality-iframe"]').attributes('srcdoc')).toBe(OTOK_QUALITY_PREVIEW_CSP_PREFIX + HTML)
+    expect(wrapper.find('[data-testid="otok-quality-iframe"]').attributes('src')).toBe(previewURL(21))
 
     release!()
     await flushPromises()
     expect(wrapper.find('.animate-pulse').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="otok-quality-iframe"]').attributes('srcdoc')).toBe(OTOK_QUALITY_PREVIEW_CSP_PREFIX + HTML)
+    expect(wrapper.find('[data-testid="otok-quality-iframe"]').attributes('src')).toBe(previewURL(21))
+  })
+
+  it('已结束的记录缓存 1 小时，过期后重新拉取以换新的预览地址', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-27T10:00:00Z'))
+    const src = source(() => rounds())
+    const wrapper = mountPanel(src)
+    await flushPromises()
+    await wrapper.find('[data-testid="otok-quality-round-1"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="otok-quality-round-2"]').trigger('click')
+    await flushPromises()
+    expect(src.getRun.mock.calls.filter(([id]) => id === 21)).toHaveLength(1)
+
+    vi.setSystemTime(new Date('2026-11-27T11:01:00Z'))
+    await wrapper.find('[data-testid="otok-quality-round-1"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="otok-quality-round-2"]').trigger('click')
+    await flushPromises()
+    expect(src.getRun.mock.calls.filter(([id]) => id === 21)).toHaveLength(2)
+  })
+
+  it('关掉再打开预览：缓存未过期不重拉，过期后重拉换新地址', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-27T10:00:00Z'))
+    const src = source(() => rounds())
+    const wrapper = mountPanel(src)
+    await flushPromises()
+    const toggle = () => wrapper.find('[data-testid="otok-quality-toggle-preview"]').trigger('click')
+    const calls21 = () => src.getRun.mock.calls.filter(([id]) => id === 21).length
+    expect(calls21()).toBe(1)
+
+    await toggle()
+    await toggle()
+    await flushPromises()
+    expect(calls21()).toBe(1)
+    expect(wrapper.find('[data-testid="otok-quality-iframe"]').attributes('src')).toBe(previewURL(21))
+
+    await toggle()
+    vi.setSystemTime(new Date('2026-11-27T12:30:00Z'))
+    await toggle()
+    await flushPromises()
+    expect(calls21()).toBe(2)
+    expect(wrapper.find('[data-testid="otok-quality-iframe"]').attributes('src')).toBe(previewURL(21))
   })
 
   it('有进行中的轮次时轮询，完成后停止', async () => {

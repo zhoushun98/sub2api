@@ -8,10 +8,8 @@ vi.mock('@/api/otok/quality', () => ({
 }))
 
 import {
-  OTOK_QUALITY_PREVIEW_CSP_PREFIX,
   OTOK_QUALITY_SAMPLE_PROMPT,
   __resetOtokQualityItems,
-  buildOtokQualityPreviewDoc,
   defaultOtokQualityRun,
   detectOtokQualityProtocol,
   ensureOtokQualityItems,
@@ -84,16 +82,6 @@ describe('otok quality 纯逻辑', () => {
     expect(formatOtokQualityDuration(0)).toBe('0.0s')
     expect(formatOtokQualityDuration(null)).toBe('—')
     expect(formatOtokQualityDuration(-1)).toBe('—')
-  })
-
-  it('预览文档一律以固定的 CSP 前缀开头，不改动原文', () => {
-    expect(OTOK_QUALITY_PREVIEW_CSP_PREFIX).toBe(
-      `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:">`,
-    )
-    const doc = '<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="default-src *"></head><body><img src="https://x/y.png"></body></html>'
-    expect(buildOtokQualityPreviewDoc(doc)).toBe(OTOK_QUALITY_PREVIEW_CSP_PREFIX + doc)
-    expect(buildOtokQualityPreviewDoc('<svg></svg>')).toBe(OTOK_QUALITY_PREVIEW_CSP_PREFIX + '<svg></svg>')
-    expect(buildOtokQualityPreviewDoc('  ')).toBe('')
   })
 
   it('默认选中第一个有 HTML 的模型', () => {

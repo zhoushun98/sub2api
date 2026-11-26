@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -14,7 +15,7 @@ import (
 
 // otok: 「降智检测」的用户端与管理端接口。
 // 所有登录用户都能看到「总开关开 且 条目启用」的全部条目；不可见一律 404。
-// 用户端不返回 URL、key、附加参数、错误原文、HTTP 状态码和上游返回的模型名。
+// 用户端不返回 URL、key、附加参数、提示词、错误原文、HTTP 状态码和上游返回的模型名。
 
 type otokQualityService interface {
 	EnabledItems(ctx context.Context) ([]service.OtokQualityItem, service.OtokQualityConfig, error)
@@ -24,6 +25,8 @@ type otokQualityService interface {
 	SaveConfig(ctx context.Context, in service.OtokQualityConfigInput) (service.OtokQualityAdminConfig, error)
 	Status(ctx context.Context) (service.OtokQualityStatus, error)
 	RunNow(ctx context.Context, itemID int64) (int64, error)
+	PreviewURL(runID int64) string
+	VerifyPreviewToken(runID int64, token string) bool
 }
 
 // OtokQualityHandler 处理降智检测的查询与配置。
@@ -142,7 +145,34 @@ func (h *OtokQualityHandler) Run(c *gin.Context) {
 		response.NotFound(c, "Run not found")
 		return
 	}
-	response.Success(c, run.UserView())
+	out := run.UserView()
+	if out.OutputHTML != "" {
+		out.PreviewURL = h.svc.PreviewURL(run.ID)
+	}
+	response.Success(c, out)
+}
+
+// Preview 返回结果里的 HTML，供 sandbox iframe 加载。iframe 带不了登录头，靠结果详情接口下发的签名鉴权；
+// 响应头用只针对预览的 CSP，允许内联脚本（动画常用脚本写），禁止联网，并强制不透明来源。
+// GET /api/v1/otok/quality/preview/:id?token=...
+func (h *OtokQualityHandler) Preview(c *gin.Context) {
+	runID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || runID <= 0 || h.svc == nil || !h.svc.VerifyPreviewToken(runID, c.Query("token")) {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	run, err := h.svc.GetRun(c.Request.Context(), runID)
+	if err != nil || run.OutputHTML == "" {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Content-Security-Policy", service.OtokQualityPreviewCSP)
+	c.Header("X-Frame-Options", "SAMEORIGIN")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Referrer-Policy", "no-referrer")
+	// no-transform：不让 Cloudflare 等中间层改写 HTML（如 Rocket Loader 改写 script 标签、邮箱混淆注入脚本）。
+	c.Header("Cache-Control", "private, max-age=600, no-transform")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", service.OtokQualityPreviewDocument(run.OutputHTML))
 }
 
 // AdminGetConfig 返回完整配置（key 只给打码值）。
@@ -234,7 +264,11 @@ func (h *OtokQualityHandler) AdminRun(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, run)
+	out := *run
+	if out.OutputHTML != "" {
+		out.PreviewURL = h.svc.PreviewURL(run.ID)
+	}
+	response.Success(c, out)
 }
 
 func otokQualityParseID(c *gin.Context, msg string) (int64, bool) {

@@ -26,12 +26,12 @@ export interface OtokQualityRunSummary {
   protocol?: OtokQualityProtocol | string
 }
 
-/** 一轮测试；prompt 是这一轮发出时的提示词快照。 */
+/** 一轮测试；prompt 是这一轮发出时的提示词快照，只有管理端接口返回。 */
 export interface OtokQualityRound {
   id: number
   item_id: number
   trigger: 'schedule' | 'manual'
-  prompt: string
+  prompt?: string
   started_at: string
   finished_at: string | null
   runs: OtokQualityRunSummary[]
@@ -44,6 +44,8 @@ export interface OtokQualityRunDetail extends OtokQualityRunSummary {
   input_tokens: number | null
   output_text: string
   output_html: string
+  /** 有 HTML 时才有：独立预览地址（带 2 小时有效的签名）。 */
+  preview_url?: string
 }
 
 export interface OtokQualityPublicItem {

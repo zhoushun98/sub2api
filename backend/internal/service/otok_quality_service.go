@@ -66,6 +66,7 @@ type OtokQualityService struct {
 	db          *sql.DB
 	cfg         *config.Config
 	encryptor   SecretEncryptor
+	previewKey  []byte
 	lockCache   LeaderLockCache
 	instanceID  string
 	client      *http.Client
@@ -104,6 +105,7 @@ func NewOtokQualityService(settings *SettingService, db *sql.DB, cfg *config.Con
 		db:          db,
 		cfg:         cfg,
 		encryptor:   encryptor,
+		previewKey:  newOtokQualityPreviewKey(cfg),
 		instanceID:  uuid.NewString(),
 		client:      newOtokQualityHTTPClient(),
 		disabled:    disabled,
