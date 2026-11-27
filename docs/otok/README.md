@@ -4,6 +4,11 @@
 
 - **USDT 链上充值**：支持 TRC20、BSC（BEP20）、Polygon、Ethereum（ERC20）。到账数据源可以选链上节点或币安充值记录（能识别币安用户之间的链下转账），详见 [USDT_PAYMENT.md](USDT_PAYMENT.md)。
 - **渠道状态卡片页**：V2 监控模式下，用户侧「渠道状态」（`/monitor`）改为按厂商分组的卡片页，每个分组一张卡，显示缓存率 / 可用率 / 首 Token 和近 N 个时间段的状态条。数据全部复用上游 V2 被动统计接口，后端无改动。代码在 `frontend/src/otok/monitorCards.ts`、`components/otok/monitor/`、`views/user/otok/`。
+- **模型广场按平台展示**：上游的模型广场（`/model-plaza`）按分组分节，有平台 / 分组 / 倍率三行筛选，每个分组一张表，同时列实付价、官方价和折扣倍率，分组多了很乱。fork 换成按平台展示：只保留平台筛选和模型名搜索，只显示标准价（输入 / 输出 / 缓存写入 / 缓存读取，有上下文分档时每档一行），页面注明「实际扣费 = 标准价 × 所选分组倍率」。后端和接口没有改动，开关、登录要求、顶部价格说明仍在后台「系统设置 → 模型广场」配置。
+  - 标准价取接口里的 `pricing`（计费实际用的渠道价，未乘倍率），没有时退回 `official_pricing`；不直接用官方价，是因为国产模型的渠道价按人民币数字填写，只有渠道价才满足「实付 = 标准价 × 倍率」。缓存写入价为 0（DeepSeek、GLM）显示「-」。
+  - 同一平台同名模型在各分组的价格（展示价、分时倍率、思考等级倍率）完全相同时只列一行、不显示分组；不同时每个价格版本各一行，标出「分组：A、B」。有价格的版本存在时，没有价格的版本不显示。
+  - 渠道定价配了分时倍率的模型（只对 token 计费生效，与后端 `calculateTokenCost` 一致），基础价那行标「其他时段」，下面按倍率各加一行时段价（同倍率的时段合并，如「工作日 09:00–12:00、14:00–18:00 ×2」，价格已乘倍率）。
+  - 代码在 `frontend/src/otok/modelPlaza.ts`、`components/otok/modelPlaza/OtokModelPlazaContent.vue`。
 - **联系我们**：侧边栏「联系我们」弹窗，显示微信客服二维码、QQ 交流群（二维码 + 群号）和邮箱。内容在后台「联系方式」页（`/admin/otok/contact`）配置，存在 settings 表的 `otok_contact` 一行（JSON，二维码为 base64），不进 public settings。后端就地构造在 `routes/otok.go`，不经 wire。代码在 `service/otok_contact.go`、`handler/otok_contact_handler.go`、`frontend/src/otok/contact.ts`、`components/otok/contact/`。
 - **上游声明倍率适配 new-api**：上游的「上游声明倍率」探测只认 sub2api 上游（`GET /v1/sub2api/billing`）。返回 404/405 时，fork 改用账号 apikey 调 new-api 的 `GET /api/log/token`，取最近一条消费日志（`type=2`）里的 `group_ratio`，合成为 `sub2api.key_billing` 响应交回原流程；之后的快照、展示、调度和写回都复用上游代码，前端无改动。令牌还没有消费日志时，记为 failed，原因码 `newapi_no_usage_log`。代码在 `service/otok_upstream_billing_newapi.go`。
 - **降智检测（自定义条目）**：用户侧边栏「降智检测」菜单（`/otok/quality`）。管理员在后台自己建条目，每条填名称、接口 URL、API key、模型（1～5 个）和提示词；后台按固定间隔让每个模型用同一份提示词各请求一次，用户按条目切换，对比不同时间的输出，判断渠道有没有降智。0.2.25-otok.2 起取代原来的「鹈鹕测试」（内部账号 + 渠道状态卡片上的按钮），旧方案的代码已删除。

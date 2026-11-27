@@ -18,7 +18,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import PlazaNavBar from '@/components/modelPlaza/PlazaNavBar.vue'
-import ModelPlazaContent from '@/components/modelPlaza/ModelPlazaContent.vue'
+import ModelPlazaContent from '@/components/otok/modelPlaza/OtokModelPlazaContent.vue' // otok: 按平台展示，替换上游按分组的 ModelPlazaContent
 import { getModelPlaza, type ModelPlazaResponse } from '@/api/modelPlaza'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'

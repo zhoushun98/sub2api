@@ -74,6 +74,7 @@
 | 同上 | `adminNavItems`，「渠道管理」children 里「渠道监控」之后 | `{ path: '/admin/otok/quality', ..., icon: OtokQualityIcon }` | 后台「降智检测」配置页入口。不挂 `flagChannelMonitor`：新方案与渠道监控无关 |
 | `frontend/src/i18n/locales/zh/index.ts`、`en/index.ts` | import 与 `export default` | `export default otokMergeLocale({ ...上游原样... }, otok)`（**改写了 2 行**） | 深合并 fork 文案。上游是浅展开，直接 `...otok` 会整块覆盖 `payment` 等对象 |
 | `frontend/src/views/user/ChannelStatusView.vue` | V2 分支与 import | `<ChannelStatusV2View v-else />` 换成 `<OtokChannelStatusCardsView v-else />`，import 同步替换（**改写了上游 2 行**） | V2 模式下用户侧「渠道状态」改用 otok 卡片页。上游 `ChannelStatusV2View.vue` 本身未改动，还原这 2 行即可恢复 |
+| `frontend/src/views/ModelPlazaView.vue` | import | `ModelPlazaContent` 的 import 改指向 `@/components/otok/modelPlaza/OtokModelPlazaContent.vue`（**改写了上游 1 行**） | 模型广场改为按平台展示（props 与上游组件相同，模板不用改）。上游 `components/modelPlaza/` 本身未改动，还原这 1 行即可恢复 |
 | `frontend/src/views/user/__tests__/ChannelStatusView.mode.spec.ts` | V2 视图的 mock | mock 目标改为 `../otok/OtokChannelStatusCardsView.vue` | 适配上面的钩子 |
 | `frontend/src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts` | `仅将具有安全 base_url 的 API Key 账号名称链接到站点主页` 用例 | 提示框 class 的断言 `arrayContaining(['self-start'])` 改为 `arrayContaining(['-ml-1'])`（**改写了上游 1 行**，临时） | 上游 v0.2.25 的 `a95c9e263` 把 `AccountsView.vue` 账号名提示框的 `self-start` 去掉了，但没更新这条断言，上游自己的全量 vitest 也挂；`otok image` 构建跑全量 `test:run`，不改就发不了版。改法与上游待合并的 PR #9061 完全一致，上游合并后同步时直接取上游版本，并删掉本行 |
 
