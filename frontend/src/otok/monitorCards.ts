@@ -104,11 +104,15 @@ export function normalizeProvider(platform: string | undefined | null): string {
   return PROVIDER_ALIASES[value] ?? value
 }
 
-/** 用户侧 request_count 被脱敏为 0，只能靠比率判断窗口内是否有流量。 */
+/**
+ * 只靠比率判断窗口内是否有流量：用户侧 request_count 被脱敏为 0；
+ * 管理员侧不看 request_count，否则窗口内只有被忽略的错误（如余额不足 403）时，
+ * 两个比率都是 0、request_count 却大于 0，会被误显示为可用率 100%，与用户侧「无数据」不一致。
+ */
 export function hasTraffic(metrics: MonitorMetric | null | undefined): boolean {
   if (!metrics) return false
   const successRate = (metrics as MonitorMetric & { success_rate?: number }).success_rate ?? 0
-  return metrics.request_count > 0 || successRate > 0 || metrics.error_rate > 0
+  return successRate > 0 || metrics.error_rate > 0
 }
 
 export function availabilityOf(metrics: MonitorMetric | null | undefined): number | null {

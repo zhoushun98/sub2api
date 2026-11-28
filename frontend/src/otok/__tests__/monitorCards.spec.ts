@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { MonitorCoverage, MonitorMatrixRow, MonitorMetric } from '@/api/channelMonitorV2'
 import {
+  availabilityOf,
   availabilityState,
   buildCards,
   effectiveRate,
@@ -79,8 +80,15 @@ describe('无数据判定', () => {
     expect(hasTraffic(metric())).toBe(false)
     expect(hasTraffic(metric({ success_rate: 1 }))).toBe(true)
     expect(hasTraffic(metric({ error_rate: 1 }))).toBe(true)
-    expect(hasTraffic(metric({ request_count: 3 }))).toBe(true)
+    expect(hasTraffic(metric({ request_count: 3, success_rate: 1 }))).toBe(true)
     expect(hasTraffic(undefined)).toBe(false)
+  })
+
+  it('管理员侧只有被忽略的错误时也视为无数据', () => {
+    // 被忽略的错误不计入 error_rate，成功数为 0，只剩 request_count > 0
+    const m = metric({ request_count: 22, error_requests: 22, success_rate: 0, error_rate: 0 })
+    expect(hasTraffic(m)).toBe(false)
+    expect(availabilityOf(m)).toBeNull()
   })
 })
 
